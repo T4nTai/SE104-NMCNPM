@@ -140,7 +140,6 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 # Ignore all SQL dump/database files
-*.sql
 *.dump
 *.backup
 *.bak
