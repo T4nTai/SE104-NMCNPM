@@ -9,43 +9,55 @@ USE teaching;
 CREATE TABLE NAMHOC (
     MaNH INT PRIMARY KEY AUTO_INCREMENT,
     Nam1 INT NOT NULL,
-    Nam2 INT NOT NULL
-);
+    Nam2 INT NOT NULL,
+    UNIQUE KEY uq_namhoc (Nam1, Nam2)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE HOCKY (
     MaHK INT PRIMARY KEY AUTO_INCREMENT,
-    TenHK VARCHAR(50) NOT NULL
-);
-
-CREATE TABLE KHOILOP (
-    MaKL INT PRIMARY KEY AUTO_INCREMENT,
-    TenKL VARCHAR(50) NOT NULL
-);
-
-CREATE TABLE MONHOC (
-    MaMonHoc INT PRIMARY KEY AUTO_INCREMENT,
-    TenMonHoc VARCHAR(100) NOT NULL,
-    HeSoMon FLOAT NOT NULL
-);
+    TenHK VARCHAR(50) NOT NULL,
+    MaNamHoc INT NULL,
+    NgayBatDau DATE NULL,
+    NgayKetThuc DATE NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE LOAIHINHKIEMTRA (
     MaLHKT INT PRIMARY KEY AUTO_INCREMENT,
     TenLHKT VARCHAR(100) NOT NULL,
     HeSo FLOAT NOT NULL
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE KHOILOP (
+    MaKL INT PRIMARY KEY AUTO_INCREMENT,
+    TenKL VARCHAR(50) NOT NULL,
+    SoLop INT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE MONHOC (
+    MaMonHoc INT PRIMARY KEY AUTO_INCREMENT,
+    TenMonHoc VARCHAR(100) NOT NULL,
+    MaMon VARCHAR(50) NULL,
+    MoTa TEXT NULL,
+    HeSoMon FLOAT NOT NULL,
+    UNIQUE KEY uq_monhoc_mamon (MaMon)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ===== Thực thể chính =====
 
--- CHÚ Ý: MaHocSinh KHÔNG AUTO_INCREMENT
 CREATE TABLE HOCSINH (
     MaHocSinh VARCHAR(100) PRIMARY KEY,
     HoTen VARCHAR(100) NOT NULL,
     NgaySinh DATE NOT NULL,
     GioiTinh CHAR(1) NOT NULL,
+    Email VARCHAR(100) NULL,
+    SDT VARCHAR(20) NULL,
     DiaChi VARCHAR(255),
     NgayTiepNhan DATE,
-    GhiChu VARCHAR(255)
-);
+    GhiChu VARCHAR(255),
+    INDEX idx_hocsinh_hoten (HoTen),
+    INDEX idx_hocsinh_email (Email),
+    INDEX idx_hocsinh_sdt (SDT)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE LOP (
     MaLop INT PRIMARY KEY AUTO_INCREMENT,
@@ -53,7 +65,7 @@ CREATE TABLE LOP (
     MaKhoiLop INT NOT NULL,
     MaNamHoc INT NOT NULL,
     SiSo INT
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE HOCSINH_LOP (
     MaLop INT NOT NULL,
@@ -61,7 +73,7 @@ CREATE TABLE HOCSINH_LOP (
     MaHocKy INT NOT NULL,
     DiemTBHK FLOAT,
     PRIMARY KEY (MaLop, MaHocSinh, MaHocKy)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ===== Bảng điểm =====
 
@@ -69,15 +81,17 @@ CREATE TABLE BANGDIEMMON (
     MaBangDiemMon INT PRIMARY KEY AUTO_INCREMENT,
     MaLop INT NOT NULL,
     MaHocKy INT NOT NULL,
-    MaMon INT NOT NULL
-);
+    MaMon INT NOT NULL,
+    UNIQUE KEY uq_bangdiemmon (MaLop, MaHocKy, MaMon)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE CT_BANGDIEMMON_HOCSINH (
     MaCTBangDiemMon INT PRIMARY KEY AUTO_INCREMENT,
     MaBangDiemMon INT NOT NULL,
     MaHocSinh VARCHAR(100) NOT NULL,
-    DiemTBMon FLOAT
-);
+    DiemTBMon FLOAT,
+    UNIQUE KEY uq_ct_bdm_hs (MaBangDiemMon, MaHocSinh)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE CT_BANGDIEMMON_LHKT (
     MaCTBangDiemMon INT NOT NULL,
@@ -85,7 +99,7 @@ CREATE TABLE CT_BANGDIEMMON_LHKT (
     Lan INT NOT NULL,
     Diem FLOAT,
     PRIMARY KEY (MaCTBangDiemMon, MaLHKT, Lan)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ===== Báo cáo =====
 
@@ -93,8 +107,9 @@ CREATE TABLE BAOCAOTKMON (
     MaBCTKMon INT PRIMARY KEY AUTO_INCREMENT,
     MaMon INT NOT NULL,
     MaHocKy INT NOT NULL,
-    MaNamHoc INT NOT NULL
-);
+    MaNamHoc INT NOT NULL,
+    UNIQUE KEY uq_bctkmon (MaMon, MaHocKy, MaNamHoc)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE CT_BAOCAOTKMON (
     MaBCTKMon INT NOT NULL,
@@ -102,7 +117,7 @@ CREATE TABLE CT_BAOCAOTKMON (
     SoLuongDat INT,
     TiLeDat FLOAT,
     PRIMARY KEY (MaBCTKMon, MaLop)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE BAOCAOTKHK (
     MaHocKy INT NOT NULL,
@@ -111,7 +126,7 @@ CREATE TABLE BAOCAOTKHK (
     SoLuongDat INT,
     TiLeDat FLOAT,
     PRIMARY KEY (MaHocKy, MaNamHoc, MaLop)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ===== Tài khoản / phân quyền =====
 
@@ -123,13 +138,14 @@ CREATE TABLE QUYEN (
     DieuChinhNghiepVu TINYINT(1),
     TraCuuDiemVaLopHoc TINYINT(1),
     TraCuuHocSinh TINYINT(1)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE NHOMNGUOIDUNG (
     MaNhomNguoiDung INT PRIMARY KEY AUTO_INCREMENT,
     TenNhomNguoiDung VARCHAR(100),
-    MaQuyen INT NOT NULL
-);
+    MaQuyen INT NOT NULL,
+    UNIQUE KEY uq_nhom_ten (TenNhomNguoiDung)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE NGUOIDUNG (
     MaNguoiDung INT PRIMARY KEY AUTO_INCREMENT,
@@ -138,13 +154,9 @@ CREATE TABLE NGUOIDUNG (
     HoVaTen VARCHAR(100),
     Email VARCHAR(100),
     MaNhomNguoiDung INT NOT NULL,
-
-    -- NEW: liên kết tài khoản học sinh (nullable)
     MaHocSinh VARCHAR(100) NULL,
-
-    -- 1 học sinh tối đa 1 tài khoản
     UNIQUE KEY uq_nguoidung_mahs (MaHocSinh)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ===== Tham số theo năm học =====
 
@@ -157,10 +169,14 @@ CREATE TABLE THAMSO (
     Diem_Toi_Da INT,
     Diem_Dat_Mon INT,
     Diem_Dat INT,
-    MaNamHoc INT NOT NULL
-);
+    MaNamHoc INT NOT NULL,
+    UNIQUE KEY uq_thamso_namhoc (MaNamHoc)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ===== Foreign Keys =====
+
+ALTER TABLE HOCKY
+ADD CONSTRAINT fk_HOCKY_NAMHOC FOREIGN KEY (MaNamHoc) REFERENCES NAMHOC(MaNH);
 
 ALTER TABLE LOP 
 ADD CONSTRAINT fk_LOP_KHOILOP FOREIGN KEY (MaKhoiLop) REFERENCES KHOILOP(MaKL),
@@ -207,7 +223,6 @@ ADD CONSTRAINT fk_ND_HOCSINH FOREIGN KEY (MaHocSinh) REFERENCES HOCSINH(MaHocSin
 
 ALTER TABLE THAMSO
 ADD CONSTRAINT fk_THAMSO_NH FOREIGN KEY (MaNamHoc) REFERENCES NAMHOC(MaNH);
-
 
 INSERT INTO QUYEN
 (PhanQuyenHeThong, ThayDoiThamSo, ThayDoiQuyDinh, DieuChinhNghiepVu, TraCuuDiemVaLopHoc, TraCuuHocSinh)
