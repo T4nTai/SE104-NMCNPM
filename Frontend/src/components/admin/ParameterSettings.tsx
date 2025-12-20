@@ -144,7 +144,9 @@ export function ParameterSettings() {
   const [isAddingSubject, setIsAddingSubject] = useState(false);
   const [subjectFormData, setSubjectFormData] = useState({
     name: '',
-    code: ''
+    code: '',
+    hocKy: '',
+    namHoc: ''
   });
 
   const handleYearChange = (MaNH: number) => {
@@ -233,7 +235,9 @@ export function ParameterSettings() {
     setIsAddingSubject(false);
     setSubjectFormData({
       name: '',
-      code: ''
+      code: '',
+      hocKy: '',
+      namHoc: ''
     });
   };
 
@@ -557,6 +561,28 @@ export function ParameterSettings() {
                   placeholder="TOAN"
                 />
               </div>
+              <div>
+                <label className="block text-gray-700 mb-2">Học kỳ</label>
+                <input
+                  type="text"
+                  required
+                  value={subjectFormData.hocKy}
+                  onChange={(e) => setSubjectFormData({ ...subjectFormData, hocKy: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="1"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-700 mb-2">Năm học</label>
+                <input
+                  type="text"
+                  required
+                  value={subjectFormData.namHoc}
+                  onChange={(e) => setSubjectFormData({ ...subjectFormData, namHoc: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="2024"
+                />
+              </div>
             </div>
             <div className="flex gap-2">
               <button
@@ -570,7 +596,7 @@ export function ParameterSettings() {
                 type="button"
                 onClick={() => {
                   setIsAddingSubject(false);
-                  setSubjectFormData({ name: '', code: '' });
+                  setSubjectFormData({ name: '', code: '' , hocKy: '' , namHoc: '' });
                 }}
                 className="flex items-center gap-2 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400"
               >
