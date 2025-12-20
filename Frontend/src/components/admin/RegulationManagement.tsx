@@ -1,872 +1,571 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Save, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Loader2 } from 'lucide-react';
 import { api } from '../../api/client';
 
-// Date helpers
-function pad2(n: number) {
-  return n < 10 ? `0${n}` : String(n);
-}
-
-function isValidDateString(s?: string) {
-  if (!s) return false;
-  const d = new Date(s);
-  return !isNaN(d.getTime());
-}
-
-function toYMD(s?: string): string {
-  if (!s) return '';
-  // If already in YYYY-MM-DD, keep it
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const d = new Date(s);
-  if (isNaN(d.getTime())) return '';
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-
-function formatDateDisplay(s?: string): string {
-  if (!s) return '-';
-  if (!isValidDateString(s)) {
-    // Show raw YYYY-MM-DD if available, otherwise '-'
-    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '-';
-  }
-  return new Date(s).toLocaleDateString('vi-VN');
-}
-
-// Interfaces for Semester
-interface Semester {
-  MaHK?: number;
-  id?: string;
-  TenHK?: string;
-  name?: string;
-  MaNamHoc?: number;
-  NamHoc?: { MaNH: number; Nam1: number; Nam2: number };
-  namHoc?: { MaNH: number; Nam1: number; Nam2: number };
-  NgayBatDau?: string;
-  startDate?: string;
-  NgayKetThuc?: string;
-  endDate?: string;
-  year?: string;
-}
-
-// Interfaces for Subject
-interface Subject {
-  MaMonHoc?: number;
-  id?: string;
-  TenMonHoc?: string;
-  name?: string;
-  MaMon?: string;
-  code?: string;
-  HeSoMon?: number;
-  heSoMon?: number;
-  MoTa?: string;
-  description?: string;
-}
-
-// Interfaces for Grade (Class Level)
-interface Grade {
-  MaKL?: number;
-  id?: string;
-  TenKL?: string;
-  name?: string;
-  SoLop?: number;
-  classCount?: number;
-}
-
-type TabType = 'semesters' | 'subjects' | 'grades';
-
 export function RegulationManagement() {
-  const [activeTab, setActiveTab] = useState<TabType>('semesters');
-  const [semesterFilterYear, setSemesterFilterYear] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
   // Semester states
-  const [semesters, setSemesters] = useState<Semester[]>([]);
+  const [semesters, setSemesters] = useState<any[]>([]);
   const [isAddingSemester, setIsAddingSemester] = useState(false);
-  const [editingSemesterId, setEditingSemesterId] = useState<string | null>(null);
-  const [semesterLoading, setSemesterLoading] = useState(false);
-  const [semesterError, setSemesterError] = useState<string | null>(null);
+  const [editingSemesterId, setEditingSemesterId] = useState<number | null>(null);
   const [semesterFormData, setSemesterFormData] = useState({
-    name: '',
-    startDate: '',
-    endDate: '',
-    year: '',
+    TenHK: '',
   });
 
   // Subject states
-  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
   const [isAddingSubject, setIsAddingSubject] = useState(false);
-  const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
-  const [subjectLoading, setSubjectLoading] = useState(false);
-  const [subjectError, setSubjectError] = useState<string | null>(null);
+  const [editingSubjectId, setEditingSubjectId] = useState<number | null>(null);
   const [subjectFormData, setSubjectFormData] = useState({
-    name: '',
-    code: '',
-    heSoMon: 1,
-    description: ''
+    TenMonHoc: '',
+    HeSoMon: 1,
+    MoTa: ''
   });
 
   // Grade states
-  const [grades, setGrades] = useState<Grade[]>([]);
+  const [grades, setGrades] = useState<any[]>([]);
   const [isAddingGrade, setIsAddingGrade] = useState(false);
-  const [editingGradeId, setEditingGradeId] = useState<string | null>(null);
-  const [gradeLoading, setGradeLoading] = useState(false);
-  const [gradeError, setGradeError] = useState<string | null>(null);
+  const [editingGradeId, setEditingGradeId] = useState<number | null>(null);
   const [gradeFormData, setGradeFormData] = useState({
-    name: '',
-    classCount: 0,
+    TenKL: '',
+    SoLop: 0,
   });
 
-  // Fetch semesters on mount
   useEffect(() => {
-    fetchSemesters();
+    loadAllData();
   }, []);
 
-  const fetchSemesters = async () => {
+  const loadAllData = async () => {
+    await Promise.all([loadSemesters(), loadSubjects(), loadGrades()]);
+  };
+
+  const loadSemesters = async () => {
     try {
-      setSemesterLoading(true);
-      setSemesterError(null);
-      const params = semesterFilterYear.trim()
-        ? { NamHoc: semesterFilterYear.trim() }
-        : undefined;
-      const data = await api.listSemesters(params);
-      const normalized = (data || []).map((r: any) => {
-        const nh = r?.NamHoc || r?.namHoc;
-        return {
-          ...r,
-          year: nh ? `${nh.Nam1}-${nh.Nam2}` : r?.year,
-          startDate: toYMD(r?.NgayBatDau || r?.startDate),
-          endDate: toYMD(r?.NgayKetThuc || r?.endDate),
-        };
-      });
-      setSemesters(normalized);
+      setLoading(true);
+      setError(null);
+      const data = await api.listSemesters();
+      setSemesters(Array.isArray(data) ? data : []);
     } catch (err: any) {
-      setSemesterError(err.message || 'Không thể tải danh sách học kỳ');
+      setError(err.message || 'Không thể tải danh sách học kỳ');
     } finally {
-      setSemesterLoading(false);
+      setLoading(false);
     }
   };
 
-  const fetchSubjects = async () => {
+  const loadSubjects = async () => {
     try {
-      setSubjectLoading(true);
-      setSubjectError(null);
+      setLoading(true);
+      setError(null);
       const data = await api.listSubjects();
-      setSubjects(data);
+      setSubjects(Array.isArray(data) ? data : []);
     } catch (err: any) {
-      setSubjectError(err.message || 'Không thể tải danh sách môn học');
+      setError(err.message || 'Không thể tải danh sách môn học');
     } finally {
-      setSubjectLoading(false);
+      setLoading(false);
     }
   };
 
-  const fetchGrades = async () => {
+  const loadGrades = async () => {
     try {
-      setGradeLoading(true);
-      setGradeError(null);
+      setLoading(true);
+      setError(null);
       const data = await api.listGrades();
-      setGrades(data);
+      setGrades(Array.isArray(data) ? data : []);
     } catch (err: any) {
-      setGradeError(err.message || 'Không thể tải danh sách khối lớp');
+      setError(err.message || 'Không thể tải danh sách khối lớp');
     } finally {
-      setGradeLoading(false);
+      setLoading(false);
     }
   };
 
   // Semester handlers
   const handleSubmitSemester = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSemesterError(null);
     
     try {
-      const NamHocText = (semesterFormData.year || '').trim();
-      if (!NamHocText) {
-        throw new Error('Vui lòng nhập năm học (ví dụ: 2024-2025)');
-      }
-      const isValidYear = /^\d{4}-\d{4}$/.test(NamHocText);
-      if (!isValidYear) {
-        throw new Error('Định dạng năm học phải là YYYY-YYYY (vd: 2024-2025)');
-      }
-      const [y1, y2] = NamHocText.split('-').map(Number);
-      if (!(y2 === y1 + 1)) {
-        throw new Error('Năm học phải liên tiếp (vd: 2024-2025)');
-      }
-      // Optional: validate date range when both provided
-      const sd = semesterFormData.startDate?.trim();
-      const ed = semesterFormData.endDate?.trim();
-      if (sd && ed) {
-        if (!isValidDateString(sd) || !isValidDateString(ed)) {
-          throw new Error('Ngày bắt đầu/kết thúc không hợp lệ');
-        }
-        const sDate = new Date(sd);
-        const eDate = new Date(ed);
-        if (sDate > eDate) {
-          throw new Error('Ngày bắt đầu phải trước hoặc bằng ngày kết thúc');
-        }
-      }
-      const payload = {
-        TenHK: semesterFormData.name,
-        NgayBatDau: toYMD(semesterFormData.startDate) || undefined,
-        NgayKetThuc: toYMD(semesterFormData.endDate) || undefined,
-        NamHoc: NamHocText,
-      };
+      setLoading(true);
+      setError(null);
 
       if (editingSemesterId) {
-        await api.updateSemester(editingSemesterId, payload);
+        await api.updateSemester(String(editingSemesterId), semesterFormData);
+        setEditingSemesterId(null);
       } else {
-        await api.createSemester(payload);
+        if (semesters.length >= 2) {
+          setError('Chỉ được phép có 2 học kỳ (Học kỳ I và Học kỳ II)');
+          return;
+        }
+        await api.createSemester(semesterFormData);
       }
-      
+
+      setSuccess(true);
       setIsAddingSemester(false);
-      setEditingSemesterId(null);
       setSemesterFormData({
-        name: '',
-        startDate: '',
-        endDate: '',
-        year: '',
+        TenHK: '',
       });
-      await fetchSemesters();
+      await loadSemesters();
+      setTimeout(() => setSuccess(false), 3000);
     } catch (err: any) {
-      const serverMsg = err?.response?.data?.message || err?.response?.data?.error;
-      setSemesterError(serverMsg || err.message || 'Không thể lưu học kỳ');
+      setError(err.message || 'Không thể lưu học kỳ');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleEditSemester = (semester: Semester) => {
-    setEditingSemesterId(String(semester.MaHK || semester.id || ''));
-    const nh = semester.NamHoc || semester.namHoc;
+  const handleEditSemester = (semester: any) => {
+    setEditingSemesterId(semester.MaHK);
     setSemesterFormData({
-      name: semester.TenHK || semester.name || '',
-      startDate: toYMD(semester.NgayBatDau || semester.startDate),
-      endDate: toYMD(semester.NgayKetThuc || semester.endDate),
-      year: nh ? `${nh.Nam1}-${nh.Nam2}` : String(semester.year || ''),
+      TenHK: semester.TenHK,
     });
     setIsAddingSemester(true);
   };
 
-  const handleDeleteSemester = async (id: string) => {
-    if (confirm('Bạn có chắc chắn muốn xóa học kỳ này?')) {
-      try {
-        setSemesterError(null);
-        await api.deleteSemester(id);
-        await fetchSemesters();
-      } catch (err: any) {
-        setSemesterError(err.message || 'Không thể xóa học kỳ');
-      }
-    }
-  };
+  const handleDeleteSemester = async (MaHK: number) => {
+    if (!confirm('Bạn có chắc chắn muốn xóa học kỳ này?')) return;
 
-  const handleCancelSemester = () => {
-    setIsAddingSemester(false);
-    setEditingSemesterId(null);
-    setSemesterFormData({
-      name: '',
-      startDate: '',
-      endDate: '',
-      year: '',
-    });
+    try {
+      setLoading(true);
+      setError(null);
+      await api.deleteSemester(String(MaHK));
+      setSuccess(true);
+      await loadSemesters();
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Không thể xóa học kỳ');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Subject handlers
   const handleSubmitSubject = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubjectError(null);
     
     try {
-      const payload = {
-        TenMonHoc: subjectFormData.name,
-        MaMon: subjectFormData.code || undefined,
-        HeSoMon: subjectFormData.heSoMon,
-        MoTa: subjectFormData.description || undefined
-      };
+      setLoading(true);
+      setError(null);
 
       if (editingSubjectId) {
-        await api.updateSubject(editingSubjectId, payload);
+        await api.updateSubject(String(editingSubjectId), subjectFormData);
+        setEditingSubjectId(null);
       } else {
-        await api.createSubject(payload);
+        await api.createSubject(subjectFormData);
       }
-      
+
+      setSuccess(true);
       setIsAddingSubject(false);
-      setEditingSubjectId(null);
       setSubjectFormData({
-        name: '',
-        code: '',
-        heSoMon: 1,
-        description: ''
+        TenMonHoc: '',
+        HeSoMon: 1,
+        MoTa: ''
       });
-      await fetchSubjects();
+      await loadSubjects();
+      setTimeout(() => setSuccess(false), 3000);
     } catch (err: any) {
-      setSubjectError(err.message || 'Không thể lưu môn học');
+      setError(err.message || 'Không thể lưu môn học');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleEditSubject = (subject: Subject) => {
-    setEditingSubjectId(String(subject.MaMonHoc || subject.id || ''));
+  const handleEditSubject = (subject: any) => {
+    setEditingSubjectId(subject.MaMonHoc);
     setSubjectFormData({
-      name: subject.TenMonHoc || subject.name || '',
-      code: subject.MaMon || subject.code || '',
-      heSoMon: subject.HeSoMon || subject.heSoMon || 1,
-      description: subject.MoTa || subject.description || ''
+      TenMonHoc: subject.TenMonHoc,
+      HeSoMon: subject.HeSoMon,
+      MoTa: subject.MoTa || ''
     });
     setIsAddingSubject(true);
   };
 
-  const handleDeleteSubject = async (id: string) => {
-    if (confirm('Bạn có chắc chắn muốn xóa môn học này?')) {
-      try {
-        setSubjectError(null);
-        await api.deleteSubject(id);
-        await fetchSubjects();
-      } catch (err: any) {
-        setSubjectError(err.message || 'Không thể xóa môn học');
-      }
-    }
-  };
+  const handleDeleteSubject = async (MaMonHoc: number) => {
+    if (!confirm('Bạn có chắc chắn muốn xóa môn học này?')) return;
 
-  const handleCancelSubject = () => {
-    setIsAddingSubject(false);
-    setEditingSubjectId(null);
-    setSubjectFormData({
-      name: '',
-      code: '',
-      heSoMon: 1,
-      description: ''
-    });
+    try {
+      setLoading(true);
+      setError(null);
+      await api.deleteSubject(String(MaMonHoc));
+      setSuccess(true);
+      await loadSubjects();
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Không thể xóa môn học');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Grade handlers
   const handleSubmitGrade = async (e: React.FormEvent) => {
     e.preventDefault();
-    setGradeError(null);
     
     try {
-      const payload = {
-        TenKL: gradeFormData.name,
-        SoLop: gradeFormData.classCount || undefined
-      };
+      setLoading(true);
+      setError(null);
 
       if (editingGradeId) {
-        await api.updateGrade(editingGradeId, payload);
+        await api.updateGrade(String(editingGradeId), gradeFormData);
+        setEditingGradeId(null);
       } else {
-        await api.createGrade(payload);
+        if (grades.length >= 3) {
+          setError('Chỉ được phép có 3 khối lớp (10, 11, 12)');
+          return;
+        }
+        await api.createGrade(gradeFormData);
       }
-      
+
+      setSuccess(true);
       setIsAddingGrade(false);
-      setEditingGradeId(null);
       setGradeFormData({
-        name: '',
-        classCount: 0,
+        TenKL: '',
+        SoLop: 0,
       });
-      await fetchGrades();
+      await loadGrades();
+      setTimeout(() => setSuccess(false), 3000);
     } catch (err: any) {
-      setGradeError(err.message || 'Không thể lưu khối lớp');
+      setError(err.message || 'Không thể lưu khối lớp');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleEditGrade = (grade: Grade) => {
-    setEditingGradeId(String(grade.MaKL || grade.id || ''));
+  const handleEditGrade = (grade: any) => {
+    setEditingGradeId(grade.MaKL);
     setGradeFormData({
-      name: grade.TenKL || grade.name || '',
-      classCount: grade.SoLop || grade.classCount || 0,
+      TenKL: grade.TenKL,
+      SoLop: grade.SoLop || 0,
     });
     setIsAddingGrade(true);
   };
 
-  const handleDeleteGrade = async (id: string) => {
-    if (confirm('Bạn có chắc chắn muốn xóa khối lớp này?')) {
-      try {
-        setGradeError(null);
-        await api.deleteGrade(id);
-        await fetchGrades();
-      } catch (err: any) {
-        setGradeError(err.message || 'Không thể xóa khối lớp');
-      }
-    }
-  };
+  const handleDeleteGrade = async (MaKL: number) => {
+    if (!confirm('Bạn có chắc chắn muốn xóa khối lớp này?')) return;
 
-  const handleCancelGrade = () => {
-    setIsAddingGrade(false);
-    setEditingGradeId(null);
-    setGradeFormData({
-      name: '',
-      classCount: 0,
-    });
+    try {
+      setLoading(true);
+      setError(null);
+      await api.deleteGrade(String(MaKL));
+      setSuccess(true);
+      await loadGrades();
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Không thể xóa khối lớp');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div>
-      <h1 className="text-blue-900 mb-6">Thay đổi quy định</h1>
+      <h1 className="text-indigo-900 mb-6">Quản lý quy định</h1>
 
-      {/* Tabs */}
-      <div className="flex gap-2 mb-6 border-b border-gray-200">
-        <button
-          onClick={() => {
-            setActiveTab('semesters');
-            fetchSemesters();
-          }}
-          className={`px-6 py-3 transition-colors ${
-            activeTab === 'semesters'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-600 hover:text-blue-600'
-          }`}
-        >
-          Học kỳ
-        </button>
-        <button
-          onClick={() => {
-            setActiveTab('subjects');
-            fetchSubjects();
-          }}
-          className={`px-6 py-3 transition-colors ${
-            activeTab === 'subjects'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-600 hover:text-blue-600'
-          }`}
-        >
-          Môn học
-        </button>
-        <button
-          onClick={() => {
-            setActiveTab('grades');
-            fetchGrades();
-          }}
-          className={`px-6 py-3 transition-colors ${
-            activeTab === 'grades'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-600 hover:text-blue-600'
-          }`}
-        >
-          Khối lớp
-        </button>
-      </div>
+      {/* Messages */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+          {error}
+        </div>
+      )}
 
-      {/* Semester Tab Content */}
-      {activeTab === 'semesters' && (
-        <div>
-          {semesterError && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-              Lỗi: {semesterError}
+      {success && (
+        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-6">
+          Thao tác thành công!
+        </div>
+      )}
+
+      {loading && (
+        <div className="flex justify-center py-12">
+          <Loader2 className="w-10 h-10 animate-spin text-indigo-600" />
+        </div>
+      )}
+
+      {!loading && (
+        <div className="space-y-6">
+          {/* SEMESTERS SECTION */}
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-gray-900">Quản lý học kỳ</h2>
+              {!isAddingSemester && semesters.length < 2 && (
+                <button
+                  onClick={() => setIsAddingSemester(true)}
+                  className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+                >
+                  <Plus className="w-5 h-5" />
+                  Thêm học kỳ
+                </button>
+              )}
             </div>
-          )}
 
-          {semesterLoading && <div className="text-blue-600 mb-4">Đang tải dữ liệu...</div>}
-
-          <div className="flex justify-end items-center mb-6">
-            {!isAddingSemester && (
-              <button
-                onClick={() => setIsAddingSemester(true)}
-                className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-              >
-                <Plus className="w-5 h-5" />
-                Thêm học kỳ
-              </button>
-            )}
-          </div>
-
-          {isAddingSemester && (
-            <div className="bg-white p-6 rounded-xl shadow-sm mb-6">
-              <h2 className="text-blue-900 mb-4">
-                {editingSemesterId ? 'Chỉnh sửa học kỳ' : 'Thêm học kỳ mới'}
-              </h2>
-              <form onSubmit={handleSubmitSemester}>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label className="block text-gray-700 mb-2">Tên học kỳ</label>
-                    <input
-                      type="text"
-                      required
-                      value={semesterFormData.name || ''}
-                      onChange={(e) => setSemesterFormData({ ...semesterFormData, name: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Học kỳ I"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">Năm học</label>
-                    <input
-                      type="text"
-                      required
-                      value={semesterFormData.year || ''}
-                      onChange={(e) => setSemesterFormData({ ...semesterFormData, year: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="2024-2025"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">Ngày bắt đầu</label>
-                    <input
-                      type="date"
-                      required
-                      value={semesterFormData.startDate || ''}
-                      onChange={(e) => setSemesterFormData({ ...semesterFormData, startDate: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">Ngày kết thúc</label>
-                    <input
-                      type="date"
-                      required
-                      value={semesterFormData.endDate || ''}
-                      onChange={(e) => setSemesterFormData({ ...semesterFormData, endDate: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
+            {isAddingSemester && (
+              <form onSubmit={handleSubmitSemester} className="bg-gray-50 p-4 rounded-lg mb-4">
+                <div className="mb-4">
+                  <label className="block text-gray-700 mb-2">Tên học kỳ *</label>
+                  <input
+                    type="text"
+                    value={semesterFormData.TenHK}
+                    onChange={(e) => setSemesterFormData({ TenHK: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="Ví dụ: Học kỳ I"
+                    required
+                  />
                 </div>
                 <div className="flex gap-2">
                   <button
                     type="submit"
-                    className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                    className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
                   >
-                    <Save className="w-5 h-5" />
-                    {editingSemesterId ? 'Cập nhật' : 'Lưu'}
+                    <Save className="w-4 h-4" />
+                    {editingSemesterId ? 'Cập nhật' : 'Thêm'}
                   </button>
                   <button
                     type="button"
-                    onClick={handleCancelSemester}
-                    className="flex items-center gap-2 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400"
+                    onClick={() => {
+                      setIsAddingSemester(false);
+                      setEditingSemesterId(null);
+                      setSemesterFormData({ TenHK: '' });
+                    }}
+                    className="flex items-center gap-2 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300"
                   >
-                    <X className="w-5 h-5" />
+                    <X className="w-4 h-4" />
                     Hủy
                   </button>
                 </div>
               </form>
-            </div>
-          )}
-
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between px-6 pt-4">
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={semesterFilterYear}
-                  onChange={(e) => setSemesterFilterYear(e.target.value)}
-                  placeholder="Lọc theo năm học (vd: 2024-2025)"
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700"
-                  onClick={fetchSemesters}
-                >
-                  Lọc
-                </button>
-                <button
-                  className="bg-gray-200 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-300"
-                  onClick={() => { setSemesterFilterYear(''); fetchSemesters(); }}
-                >
-                  Xóa lọc
-                </button>
-              </div>
-            </div>
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-gray-700">Tên học kỳ</th>
-                  <th className="px-6 py-3 text-left text-gray-700">Năm học</th>
-                  <th className="px-6 py-3 text-left text-gray-700">Thời gian</th>
-                  <th className="px-6 py-3 text-left text-gray-700">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {semesters.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-4 text-center text-gray-500">
-                      Không có dữ liệu
-                    </td>
-                  </tr>
-                ) : (
-                  semesters.map((semester) => (
-                    <tr key={semester.MaHK || semester.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-gray-900">{semester.TenHK || semester.name}</td>
-                      <td className="px-6 py-4 text-gray-900">{(semester.NamHoc || semester.namHoc) ? `${(semester.NamHoc || semester.namHoc)!.Nam1}-${(semester.NamHoc || semester.namHoc)!.Nam2}` : (semester.year || '-')}</td>
-                      <td className="px-6 py-4 text-gray-600">
-                        {formatDateDisplay(semester.NgayBatDau || semester.startDate)} - {formatDateDisplay(semester.NgayKetThuc || semester.endDate)}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleEditSemester(semester)}
-                            className="text-blue-600 hover:text-blue-700"
-                          >
-                            <Edit2 className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteSemester(String(semester.MaHK || semester.id || ''))}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="w-5 h-5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Subject Tab Content */}
-      {activeTab === 'subjects' && (
-        <div>
-          {subjectError && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-              Lỗi: {subjectError}
-            </div>
-          )}
-
-          {subjectLoading && <div className="text-blue-600 mb-4">Đang tải dữ liệu...</div>}
-
-          <div className="flex justify-end items-center mb-6">
-            {!isAddingSubject && (
-              <button
-                onClick={() => setIsAddingSubject(true)}
-                className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-              >
-                <Plus className="w-5 h-5" />
-                Thêm môn học
-              </button>
             )}
+
+            <div className="space-y-2">
+              {semesters.map((semester) => (
+                <div key={semester.MaHK} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <div className="text-gray-900">{semester.TenHK}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEditSemester(semester)}
+                      className="text-blue-600 hover:text-blue-800"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteSemester(semester.MaHK)}
+                      className="text-red-600 hover:text-red-800"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {semesters.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  Chưa có học kỳ nào. Nhấn "Thêm học kỳ" để bắt đầu.
+                </div>
+              )}
+            </div>
           </div>
 
-          {isAddingSubject && (
-            <div className="bg-white p-6 rounded-xl shadow-sm mb-6">
-              <h2 className="text-blue-900 mb-4">
-                {editingSubjectId ? 'Chỉnh sửa môn học' : 'Thêm môn học mới'}
-              </h2>
-              <form onSubmit={handleSubmitSubject}>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          {/* SUBJECTS SECTION */}
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-gray-900">Quản lý môn học</h2>
+              {!isAddingSubject && (
+                <button
+                  onClick={() => setIsAddingSubject(true)}
+                  className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+                >
+                  <Plus className="w-5 h-5" />
+                  Thêm môn học
+                </button>
+              )}
+            </div>
+
+            {isAddingSubject && (
+              <form onSubmit={handleSubmitSubject} className="bg-gray-50 p-4 rounded-lg mb-4">
+                <div className="grid grid-cols-2 gap-4 mb-4">
                   <div>
-                    <label className="block text-gray-700 mb-2">Tên môn học</label>
+                    <label className="block text-gray-700 mb-2">Tên môn học *</label>
                     <input
                       type="text"
+                      value={subjectFormData.TenMonHoc}
+                      onChange={(e) => setSubjectFormData({ ...subjectFormData, TenMonHoc: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="Ví dụ: Toán"
                       required
-                      value={subjectFormData.name || ''}
-                      onChange={(e) => setSubjectFormData({ ...subjectFormData, name: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Toán"
                     />
                   </div>
                   <div>
-                    <label className="block text-gray-700 mb-2">Mã môn học</label>
-                    <input
-                      type="text"
-                      required
-                      value={subjectFormData.code || ''}
-                      onChange={(e) => setSubjectFormData({ ...subjectFormData, code: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="TOAN"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-gray-700 mb-2">Hệ số môn</label>
+                    <label className="block text-gray-700 mb-2">Hệ số môn *</label>
                     <input
                       type="number"
+                      value={subjectFormData.HeSoMon}
+                      onChange={(e) => setSubjectFormData({ ...subjectFormData, HeSoMon: parseFloat(e.target.value) })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       required
                       min="1"
-                      max="3"
-                      step="1"
-                      value={subjectFormData.heSoMon || 1}
-                      onChange={(e) => setSubjectFormData({ ...subjectFormData, heSoMon: parseInt(e.target.value) })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      step="0.5"
                     />
                   </div>
-                  <div>
+                  <div className="col-span-2">
                     <label className="block text-gray-700 mb-2">Mô tả</label>
-                    <input
-                      type="text"
-                      value={subjectFormData.description || ''}
-                      onChange={(e) => setSubjectFormData({ ...subjectFormData, description: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Mô tả môn học"
+                    <textarea
+                      value={subjectFormData.MoTa}
+                      onChange={(e) => setSubjectFormData({ ...subjectFormData, MoTa: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      rows={3}
                     />
                   </div>
                 </div>
                 <div className="flex gap-2">
                   <button
                     type="submit"
-                    className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                    className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
                   >
-                    <Save className="w-5 h-5" />
-                    {editingSubjectId ? 'Cập nhật' : 'Lưu'}
+                    <Save className="w-4 h-4" />
+                    {editingSubjectId ? 'Cập nhật' : 'Thêm'}
                   </button>
                   <button
                     type="button"
-                    onClick={handleCancelSubject}
-                    className="flex items-center gap-2 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400"
+                    onClick={() => {
+                      setIsAddingSubject(false);
+                      setEditingSubjectId(null);
+                      setSubjectFormData({ TenMonHoc: '', HeSoMon: 1, MoTa: '' });
+                    }}
+                    className="flex items-center gap-2 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300"
                   >
-                    <X className="w-5 h-5" />
+                    <X className="w-4 h-4" />
                     Hủy
                   </button>
                 </div>
               </form>
-            </div>
-          )}
-
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-gray-700">Mã môn</th>
-                  <th className="px-6 py-3 text-left text-gray-700">Tên môn học</th>
-                  <th className="px-6 py-3 text-left text-gray-700">Hệ số môn</th>
-                  <th className="px-6 py-3 text-left text-gray-700">Mô tả</th>
-                  <th className="px-6 py-3 text-left text-gray-700">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {subjects.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
-                      Không có dữ liệu
-                    </td>
-                  </tr>
-                ) : (
-                  subjects.map((subject) => (
-                    <tr key={subject.MaMonHoc || subject.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-gray-900">{subject.MaMon || subject.code || '-'}</td>
-                      <td className="px-6 py-4 text-gray-900">{subject.TenMonHoc || subject.name}</td>
-                      <td className="px-6 py-4 text-gray-900">{subject.HeSoMon || subject.heSoMon}</td>
-                      <td className="px-6 py-4 text-gray-600">{subject.MoTa || subject.description || '-'}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleEditSubject(subject)}
-                            className="text-blue-600 hover:text-blue-700"
-                          >
-                            <Edit2 className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteSubject(String(subject.MaMonHoc || subject.id || ''))}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="w-5 h-5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Grade Tab Content */}
-      {activeTab === 'grades' && (
-        <div>
-          {gradeError && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
-              Lỗi: {gradeError}
-            </div>
-          )}
-
-          {gradeLoading && <div className="text-blue-600 mb-4">Đang tải dữ liệu...</div>}
-
-          <div className="flex justify-end items-center mb-6">
-            {!isAddingGrade && (
-              <button
-                onClick={() => setIsAddingGrade(true)}
-                className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-              >
-                <Plus className="w-5 h-5" />
-                Thêm khối lớp
-              </button>
             )}
+
+            <div className="space-y-2">
+              {subjects.map((subject) => (
+                <div key={subject.MaMonHoc} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <div className="text-gray-900">{subject.TenMonHoc}</div>
+                    <div className="text-sm text-gray-600">
+                      Hệ số: {subject.HeSoMon}
+                      {subject.MoTa && ` • ${subject.MoTa}`}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEditSubject(subject)}
+                      className="text-blue-600 hover:text-blue-800"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteSubject(subject.MaMonHoc)}
+                      className="text-red-600 hover:text-red-800"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {subjects.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  Chưa có môn học nào. Nhấn "Thêm môn học" để bắt đầu.
+                </div>
+              )}
+            </div>
           </div>
 
-          {isAddingGrade && (
-            <div className="bg-white p-6 rounded-xl shadow-sm mb-6">
-              <h2 className="text-blue-900 mb-4">
-                {editingGradeId ? 'Chỉnh sửa khối lớp' : 'Thêm khối lớp mới'}
-              </h2>
-              <form onSubmit={handleSubmitGrade}>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          {/* GRADES SECTION */}
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-gray-900">Quản lý khối lớp</h2>
+              {!isAddingGrade && grades.length < 3 && (
+                <button
+                  onClick={() => setIsAddingGrade(true)}
+                  className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+                >
+                  <Plus className="w-5 h-5" />
+                  Thêm khối lớp
+                </button>
+              )}
+            </div>
+
+            {isAddingGrade && (
+              <form onSubmit={handleSubmitGrade} className="bg-gray-50 p-4 rounded-lg mb-4">
+                <div className="grid grid-cols-2 gap-4 mb-4">
                   <div>
-                    <label className="block text-gray-700 mb-2">Tên khối</label>
+                    <label className="block text-gray-700 mb-2">Tên khối lớp *</label>
                     <input
                       type="text"
+                      value={gradeFormData.TenKL}
+                      onChange={(e) => setGradeFormData({ ...gradeFormData, TenKL: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="Ví dụ: 10"
                       required
-                      value={gradeFormData.name || ''}
-                      onChange={(e) => setGradeFormData({ ...gradeFormData, name: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Khối 10"
                     />
                   </div>
                   <div>
-                    <label className="block text-gray-700 mb-2">Số lượng lớp</label>
+                    <label className="block text-gray-700 mb-2">Số lớp</label>
                     <input
                       type="number"
-                      required
-                      min="1"
-                      value={gradeFormData.classCount || 0}
-                      onChange={(e) => setGradeFormData({ ...gradeFormData, classCount: parseInt(e.target.value) })}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      value={gradeFormData.SoLop}
+                      onChange={(e) => setGradeFormData({ ...gradeFormData, SoLop: parseInt(e.target.value) })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      min="0"
                     />
                   </div>
                 </div>
                 <div className="flex gap-2">
                   <button
                     type="submit"
-                    className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                    className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
                   >
-                    <Save className="w-5 h-5" />
-                    {editingGradeId ? 'Cập nhật' : 'Lưu'}
+                    <Save className="w-4 h-4" />
+                    {editingGradeId ? 'Cập nhật' : 'Thêm'}
                   </button>
                   <button
                     type="button"
-                    onClick={handleCancelGrade}
-                    className="flex items-center gap-2 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400"
+                    onClick={() => {
+                      setIsAddingGrade(false);
+                      setEditingGradeId(null);
+                      setGradeFormData({ TenKL: '', SoLop: 0 });
+                    }}
+                    className="flex items-center gap-2 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300"
                   >
-                    <X className="w-5 h-5" />
+                    <X className="w-4 h-4" />
                     Hủy
                   </button>
                 </div>
               </form>
-            </div>
-          )}
+            )}
 
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-gray-700">Tên khối</th>
-                  <th className="px-6 py-3 text-left text-gray-700">Số lớp</th>
-                  <th className="px-6 py-3 text-left text-gray-700">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {grades.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="px-6 py-4 text-center text-gray-500">
-                      Không có dữ liệu
-                    </td>
-                  </tr>
-                ) : (
-                  grades.map((grade) => (
-                    <tr key={grade.MaKL || grade.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-gray-900">{grade.TenKL || grade.name}</td>
-                      <td className="px-6 py-4 text-gray-900">{grade.SoLop || grade.classCount || '-'}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleEditGrade(grade)}
-                            className="text-blue-600 hover:text-blue-700"
-                          >
-                            <Edit2 className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteGrade(String(grade.MaKL || grade.id || ''))}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="w-5 h-5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+            <div className="space-y-2">
+              {grades.map((grade) => (
+                <div key={grade.MaKL} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <div className="text-gray-900">Khối {grade.TenKL}</div>
+                    <div className="text-sm text-gray-600">Số lớp: {grade.SoLop || 0}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEditGrade(grade)}
+                      className="text-blue-600 hover:text-blue-800"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteGrade(grade.MaKL)}
+                      className="text-red-600 hover:text-red-800"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {grades.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  Chưa có khối lớp nào. Nhấn "Thêm khối lớp" để bắt đầu.
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

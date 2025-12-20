@@ -181,10 +181,7 @@ export const api = {
 
   // ========== Admin - Hoc Ky (Semesters) ==========
   async createSemester(payload: {
-    TenHK: string;
-    NamHoc: string; // e.g., "2024-2025"
-    NgayBatDau?: string;
-    NgayKetThuc?: string;
+    TenHK: string
   }): Promise<any> {
     const { data } = await apiClient.post('/admin/hocky', payload);
     return data.data || data;

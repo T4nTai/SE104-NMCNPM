@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Save, X } from 'lucide-react';
+import { apiClient } from '../../api/client';
 
 interface Permission {
   maQuyen: number;
@@ -14,50 +15,64 @@ interface Permission {
 export function PermissionManagement() {
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [formData, setFormData] = useState<Omit<Permission, 'maQuyen'>>({
+    PhanQuyenHeThong: false,
+    ThayDoiThamSo: false,
+    LapBaoCao: false,
+    TraCuuHocSinh: false,
+    TraCuuDiem: false,
+    NhapDiem: false,
+  });
 
   useEffect(() => {
     loadPermissions();
   }, []);
 
-  const loadPermissions = () => {
-    // Data will be loaded from API in the future
-    setPermissions([]);
-    setLoading(false);
+  const loadPermissions = async () => {
+    setLoading(true);
+    try {
+      const res = await apiClient.get('/admin/quyen');
+      const data = (res.data && (res.data.data || res.data)) || [];
+      setPermissions(Array.isArray(data) ? data : []);
+    } catch (err) {
+      // fallback to empty list on error
+      setPermissions([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (editingId) {
-      // TODO: Replace with actual API call
-      // await fetch(`/api/permissions/${editingId}`, {
-      //   method: 'PUT',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(formData)
-      // });
-      
-      setPermissions(permissions.map(p => 
-        p.maQuyen === editingId ? { ...formData, maQuyen: editingId } : p
-      ));
-      setEditingId(null);
-    } else {
-      // TODO: Replace with actual API call
-      // const response = await fetch('/api/permissions', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(formData)
-      // });
-      // const newPermission = await response.json();
-      
-      const newPermission: Permission = { 
-        ...formData, 
-        maQuyen: Date.now()
-      };
-      setPermissions([...permissions, newPermission]);
-      setIsAdding(false);
+    setLoading(true);
+    try {
+      if (editingId) {
+        await apiClient.put(`/admin/quyen/${editingId}`, formData);
+        setPermissions(permissions.map(p => 
+          p.maQuyen === editingId ? ({ ...formData, maQuyen: editingId } as Permission) : p
+        ));
+        setEditingId(null);
+      } else {
+        const res = await apiClient.post('/admin/quyen', formData);
+        const created = (res.data && (res.data.data || res.data)) || null;
+        if (created) {
+          setPermissions([...permissions, created]);
+        } else {
+          // fallback: add local temporary entry
+          const newPermission: Permission = { ...formData, maQuyen: Date.now() } as Permission;
+          setPermissions([...permissions, newPermission]);
+        }
+        setIsAdding(false);
+      }
+      resetForm();
+    } catch (err: any) {
+      // basic error feedback
+      alert(err?.message || 'Lỗi khi lưu quyền');
+    } finally {
+      setLoading(false);
     }
-    
-    resetForm();
   };
 
   const handleEdit = (permission: Permission) => {
@@ -75,11 +90,16 @@ export function PermissionManagement() {
 
   const handleDelete = async (id: number) => {
     if (!confirm('Bạn có chắc chắn muốn xóa quyền này?')) return;
-    
-    // TODO: Replace with actual API call
-    // await fetch(`/api/permissions/${id}`, { method: 'DELETE' });
-    
-    setPermissions(permissions.filter(p => p.maQuyen !== id));
+    setLoading(true);
+    try {
+      await apiClient.delete(`/admin/quyen/${id}`);
+      setPermissions(permissions.filter(p => p.maQuyen !== id));
+    } catch (err) {
+      // fallback to local delete
+      setPermissions(permissions.filter(p => p.maQuyen !== id));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const resetForm = () => {
