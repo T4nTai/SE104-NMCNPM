@@ -17,7 +17,7 @@ export const CTBangDiemMonHocSinh = sequelize.define(
   {
     MaCTBangDiemMon: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     MaBangDiemMon: { type: DataTypes.INTEGER, allowNull: false },
-    MaHocSinh: { type: DataTypes.STRING, allowNull: false },
+    MaHocSinh: { type: DataTypes.STRING(100), allowNull: false },
     DiemTBMon: { type: DataTypes.FLOAT, allowNull: true },
   },
   { tableName: "CT_BANGDIEMMON_HOCSINH", timestamps: false }

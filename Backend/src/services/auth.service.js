@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import { JWT_SECRET, JWT_EXPIRES_IN } from "../configs/env.js";
 import  sequelize  from "../configs/sequelize.js";
 
-import { NguoiDung, NhomNguoiDung } from "../models/auth.model.js";
+import { NguoiDung, NhomNguoiDung, Quyen } from "../models/auth.model.js";
 import { HocSinh } from "../models/student.model.js";
 
 export class AuthService {
@@ -78,8 +78,9 @@ export class AuthService {
   }) {
     if (!TenDangNhap || !MatKhau) throw { status: 400, message: "Thiếu TenDangNhap hoặc MatKhau" };
     if (!MaHocSinh) throw { status: 400, message: "MaHocSinh is required" };
-    if (!HoTen || !GioiTinh || !NgaySinh) throw { status: 400, message: "Thiếu HoTen/GioiTinh/NgaySinh" };
-
+    if (!HoTen || GioiTinh === undefined || GioiTinh === null || !NgaySinh)
+    throw { status: 400, message: "Thiếu HoTen/GioiTinh/NgaySinh" };
+  
     const existedUsername = await NguoiDung.findOne({ where: { TenDangNhap } });
     if (existedUsername) throw { status: 400, message: "TenDangNhap đã tồn tại" };
 

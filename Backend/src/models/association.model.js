@@ -78,6 +78,9 @@ export function initAssociations() {
   NhomNguoiDung.hasMany(NguoiDung, { foreignKey: "MaNhomNguoiDung", as: "users" });
 
   // THAMSO -> NAMHOC
-  ThamSo.belongsTo(NamHoc, { foreignKey: "MaNamHoc" });
-  NamHoc.hasMany(ThamSo, { foreignKey: "MaNamHoc" });
+  NamHoc.hasOne(ThamSo, { foreignKey: "MaNamHoc", sourceKey: "MaNH", as: "thamSo" });
+  ThamSo.belongsTo(NamHoc, { foreignKey: "MaNamHoc", targetKey: "MaNH", as: "namHoc" });
+
+  NamHoc.hasMany(HocKy, { foreignKey: "MaNamHoc", as: "hocKys" });
+  HocKy.belongsTo(NamHoc, { foreignKey: "MaNamHoc", as: "namHoc" });  
 }
