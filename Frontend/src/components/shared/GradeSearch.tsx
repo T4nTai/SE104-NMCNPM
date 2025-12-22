@@ -1,11 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import { api } from '../../api/client';
-import { GradeRecord, StudentInClass } from '../../api/types';
+import { GradeRecord, StudentInClass, ClassInfo } from '../../api/types';
 
 interface TeacherGradePayload {
   MaHocSinh: string;
   HoTen: string;
+  DiemMieng?: number | null;
+  Diem15Phut?: number | null;
+  Diem1Tiet?: number | null;
   DiemGiuaKy?: number;
   DiemCuoiKy?: number;
   DiemTBMon?: number;
@@ -18,10 +21,11 @@ interface GradeSearchProps {
 }
 
 export function GradeSearch({ userRole }: GradeSearchProps) {
-  const [selectedStudent, setSelectedStudent] = useState('');
-  const [selectedClass, setSelectedClass] = useState('10A1');
-  const [selectedSubject, setSelectedSubject] = useState('Toán');
-  const [selectedSemester, setSelectedSemester] = useState('HK1-2024-2025');
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
+  const [selectedSemester, setSelectedSemester] = useState<string>('1'); // MaHocKy
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
 
   // Student role: get own grades and classes
   const [grades, setGrades] = useState<GradeRecord[]>([]);
@@ -40,8 +44,8 @@ export function GradeSearch({ userRole }: GradeSearchProps) {
       setLoadingStudent(true);
       setErrorStudent(null);
       Promise.all([
-        api.getMyClasses(),
-        api.getMyScores('HK1'), // Extract semester ID from selectedSemester
+        api.getMyClasses(selectedSemester),
+        api.getMyScores(selectedSemester),
       ])
         .then(([classes, grades]) => {
           setStudentClasses(classes);
@@ -53,35 +57,80 @@ export function GradeSearch({ userRole }: GradeSearchProps) {
         .finally(() => setLoadingStudent(false));
     }
   }, [userRole, selectedSemester]);
-
-  // Load teacher's class students
+  // Teacher: load classes & subjects when role/semester changes
   useEffect(() => {
-    if (userRole === 'teacher') {
-      setLoadingTeacher(true);
-      setErrorTeacher(null);
-      api
-        .getTeacherClasses()
-        .then((classes) => {
-          // Find selected class and get its students
-          const cls = classes.find((c) => c.TenLop === selectedClass);
-          if (cls && cls.DanhSachHocSinh) {
-            setClassStudents(
-              cls.DanhSachHocSinh.map((s) => ({
-                MaHocSinh: s.MaHocSinh,
-                HoTen: s.HoTen,
-                DiemGiuaKy: undefined,
-                DiemCuoiKy: undefined,
-                DiemTBMon: undefined,
-              }))
-            );
-          }
+    if (userRole !== 'teacher') return;
+    let mounted = true;
+    setLoadingTeacher(true);
+    setErrorTeacher(null);
+
+    (async () => {
+      try {
+        const [clsList, subjList] = await Promise.all([
+          api.getTeacherClasses({ MaHocKy: selectedSemester }),
+          api.listSubjects(),
+        ]);
+        if (!mounted) return;
+        setClasses(clsList as ClassInfo[]);
+        setSubjects((s) => (s.length ? s : subjList));
+
+        // set sensible defaults if none selected
+        const defaultClass = String(clsList?.[0]?.MaLop || '');
+        const defaultSub = String((subjList?.[0]?.MaMonHoc) || '');
+        if (!selectedClassId && defaultClass) setSelectedClassId(defaultClass);
+        if (!selectedSubjectId && defaultSub) setSelectedSubjectId(defaultSub);
+      } catch (err: any) {
+        if (!mounted) return;
+        setErrorTeacher(err.message || 'Không thể tải danh sách lớp/môn');
+      } finally {
+        if (mounted) setLoadingTeacher(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [userRole, selectedSemester]);
+
+  // Teacher: load students and their scores when class/subject/semester change
+  const loadClassStudents = useCallback(async () => {
+    if (userRole !== 'teacher') return;
+    if (!selectedClassId) return setClassStudents([]);
+    setLoadingTeacher(true);
+    setErrorTeacher(null);
+    try {
+      const students = await api.getStudentsByClass(selectedClassId, selectedSemester);
+      const subId = selectedSubjectId || String(subjects?.[0]?.MaMonHoc || '');
+
+      const scored = await Promise.all(
+        students.map(async (s: any) => {
+          const scores = await api.getStudentScores(s.MaHocSinh, selectedSemester, subId);
+          const mon = (scores || []).find((m: any) => String(m.MaMon) === String(subId)) || null;
+          return {
+            MaHocSinh: s.MaHocSinh,
+            HoTen: s.HoTen,
+            DiemMieng: mon?.DiemMieng ?? null,
+            Diem15Phut: mon?.Diem15Phut ?? null,
+            Diem1Tiet: mon?.Diem1Tiet ?? null,
+            DiemGiuaKy: mon?.DiemGiuaKy ?? null,
+            DiemCuoiKy: mon?.DiemCuoiKy ?? null,
+            DiemTBMon: mon?.DiemTBMon ?? null,
+          } as TeacherGradePayload;
         })
-        .catch((err) => {
-          setErrorTeacher(err.message);
-        })
-        .finally(() => setLoadingTeacher(false));
+      );
+
+      setClassStudents(scored);
+    } catch (err: any) {
+      setErrorTeacher(err.message || 'Không thể tải điểm lớp');
+      setClassStudents([]);
+    } finally {
+      setLoadingTeacher(false);
     }
-  }, [userRole, selectedClass]);
+  }, [userRole, selectedClassId, selectedSubjectId, selectedSemester, subjects]);
+
+  useEffect(() => {
+    loadClassStudents();
+  }, [loadClassStudents]);
 
   const overallAverage =
     grades.length > 0 ? grades.reduce((sum, g) => sum + (g.DiemTBMon || 0), 0) / grades.length : 0;
@@ -94,6 +143,9 @@ export function GradeSearch({ userRole }: GradeSearchProps) {
       : 0;
   const classExcellentCount = classStudents.filter((s) => (s.DiemTBMon || 0) >= 8).length;
   const classPoorCount = classStudents.filter((s) => (s.DiemTBMon || 0) < 5).length;
+
+  const selectedClassName = classes.find((c) => String(c.MaLop) === selectedClassId)?.TenLop || '';
+  const selectedSubjectName = subjects.find((s) => String(s.MaMonHoc) === selectedSubjectId)?.TenMonHoc || '';
 
   return (
     <div>
@@ -108,33 +160,27 @@ export function GradeSearch({ userRole }: GradeSearchProps) {
               <div>
                 <label className="block text-gray-700 mb-2">Lớp</label>
                 <select
-                  value={selectedClass}
-                  onChange={(e) => setSelectedClass(e.target.value)}
+                  value={selectedClassId}
+                  onChange={(e) => setSelectedClassId(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                 >
-                  <option value="10A1">10A1</option>
-                  <option value="10A2">10A2</option>
-                  <option value="10A3">10A3</option>
-                  <option value="11A1">11A1</option>
-                  <option value="12A1">12A1</option>
+                  <option value="">-- Chọn lớp --</option>
+                  {classes.map((c) => (
+                    <option key={c.MaLop} value={c.MaLop}>{c.TenLop}</option>
+                  ))}
                 </select>
               </div>
               <div>
                 <label className="block text-gray-700 mb-2">Môn học</label>
                 <select
-                  value={selectedSubject}
-                  onChange={(e) => setSelectedSubject(e.target.value)}
+                  value={selectedSubjectId}
+                  onChange={(e) => setSelectedSubjectId(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                 >
-                  <option value="Toán">Toán</option>
-                  <option value="Văn">Văn</option>
-                  <option value="Lý">Lý</option>
-                  <option value="Hóa">Hóa</option>
-                  <option value="Sinh">Sinh</option>
-                  <option value="Sử">Sử</option>
-                  <option value="Địa">Địa</option>
-                  <option value="Đạo Đức">Đạo Đức</option>
-                  <option value="Thể Dục">Thể Dục</option>
+                  <option value="">-- Chọn môn --</option>
+                  {subjects.map((s) => (
+                    <option key={s.MaMonHoc} value={s.MaMonHoc}>{s.TenMonHoc}</option>
+                  ))}
                 </select>
               </div>
             </>
@@ -146,10 +192,8 @@ export function GradeSearch({ userRole }: GradeSearchProps) {
               onChange={(e) => setSelectedSemester(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="HK1-2024-2025">Học kỳ I - 2024-2025</option>
-              <option value="HK2-2024-2025">Học kỳ II - 2024-2025</option>
-              <option value="HK1-2023-2024">Học kỳ I - 2023-2024</option>
-              <option value="HK2-2023-2024">Học kỳ II - 2023-2024</option>
+              <option value="1">Học kỳ I</option>
+              <option value="2">Học kỳ II</option>
             </select>
           </div>
         </div>
@@ -191,6 +235,8 @@ export function GradeSearch({ userRole }: GradeSearchProps) {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-4 text-left text-gray-700">Môn học</th>
+                    <th className="px-6 py-4 text-left text-gray-700">Miệng/15p</th>
+                    <th className="px-6 py-4 text-left text-gray-700">1 tiết</th>
                     <th className="px-6 py-4 text-left text-gray-700">Giữa kỳ</th>
                     <th className="px-6 py-4 text-left text-gray-700">Cuối kỳ</th>
                     <th className="px-6 py-4 text-left text-gray-700">ĐTB Môn</th>
@@ -201,7 +247,9 @@ export function GradeSearch({ userRole }: GradeSearchProps) {
                   {grades.length > 0 ? (
                     grades.map((grade) => (
                       <tr key={grade.MaMon} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-gray-900">{grade.TenMon}</td>
+                        <td className="px-6 py-4 text-gray-900">{grade.TenMon || (grade as any).TenMonHoc}</td>
+                        <td className="px-6 py-4 text-gray-600">{grade.DiemMieng || grade.Diem15Phut ? `${grade.DiemMieng ?? '-'} / ${grade.Diem15Phut ?? '-'}` : '-'}</td>
+                        <td className="px-6 py-4 text-gray-600">{grade.Diem1Tiet ?? '-'}</td>
                         <td className="px-6 py-4 text-gray-600">{grade.DiemGiuaKy ?? '-'}</td>
                         <td className="px-6 py-4 text-gray-600">{grade.DiemCuoiKy ?? '-'}</td>
                         <td className="px-6 py-4">
@@ -238,7 +286,7 @@ export function GradeSearch({ userRole }: GradeSearchProps) {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
+                      <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
                         Chưa có dữ liệu điểm
                       </td>
                     </tr>
@@ -257,7 +305,7 @@ export function GradeSearch({ userRole }: GradeSearchProps) {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-xl">
-              <p className="text-blue-700 mb-1">ĐTB lớp - Môn {selectedSubject}</p>
+              <p className="text-blue-700 mb-1">ĐTB lớp - Môn {selectedSubjectName || 'Chưa chọn'}</p>
               <p className="text-blue-900">{classOverallAverage.toFixed(2)}</p>
             </div>
             <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-xl">
@@ -282,7 +330,7 @@ export function GradeSearch({ userRole }: GradeSearchProps) {
 
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
             <div className="p-4 bg-gray-50 border-b border-gray-200">
-              <h3 className="text-gray-900">Bảng điểm môn {selectedSubject} - Lớp {selectedClass}</h3>
+              <h3 className="text-gray-900">Bảng điểm môn {selectedSubjectName || 'Chưa chọn'} - Lớp {selectedClassName || 'Chưa chọn'}</h3>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -290,6 +338,8 @@ export function GradeSearch({ userRole }: GradeSearchProps) {
                   <tr>
                     <th className="px-6 py-4 text-left text-gray-700">Mã HS</th>
                     <th className="px-6 py-4 text-left text-gray-700">Họ và tên</th>
+                    <th className="px-6 py-4 text-left text-gray-700">Miệng/15p</th>
+                    <th className="px-6 py-4 text-left text-gray-700">1 tiết</th>
                     <th className="px-6 py-4 text-left text-gray-700">Giữa kỳ</th>
                     <th className="px-6 py-4 text-left text-gray-700">Cuối kỳ</th>
                     <th className="px-6 py-4 text-left text-gray-700">ĐTB Môn</th>
@@ -301,6 +351,8 @@ export function GradeSearch({ userRole }: GradeSearchProps) {
                       <tr key={student.MaHocSinh} className="hover:bg-gray-50">
                         <td className="px-6 py-4 text-gray-900">{student.MaHocSinh}</td>
                         <td className="px-6 py-4 text-gray-900">{student.HoTen}</td>
+                        <td className="px-6 py-4 text-gray-600">{student.DiemMieng || student.Diem15Phut ? `${student.DiemMieng ?? '-'} / ${student.Diem15Phut ?? '-'}` : '-'}</td>
+                        <td className="px-6 py-4 text-gray-600">{student.Diem1Tiet ?? '-'}</td>
                         <td className="px-6 py-4 text-gray-600">{student.DiemGiuaKy ?? '-'}</td>
                         <td className="px-6 py-4 text-gray-600">{student.DiemCuoiKy ?? '-'}</td>
                         <td className="px-6 py-4">
@@ -322,7 +374,7 @@ export function GradeSearch({ userRole }: GradeSearchProps) {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
+                      <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
                         Chưa có học sinh trong lớp này
                       </td>
                     </tr>

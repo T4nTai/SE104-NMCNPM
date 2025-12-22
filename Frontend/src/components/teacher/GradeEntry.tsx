@@ -25,48 +25,72 @@ interface GradeEntry {
 
 export function GradeEntry() {
   const [classes, setClasses] = useState<ClassInfo[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [testTypes, setTestTypes] = useState<any[]>([]);
   const [selectedClass, setSelectedClass] = useState<ClassInfo | null>(null);
   const [selectedSubject, setSelectedSubject] = useState('');
-  const [selectedSemester, setSelectedSemester] = useState('HK1');
+  const [selectedSemester, setSelectedSemester] = useState('1');
   const [grades, setGrades] = useState<GradeEntry[]>([]);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSavingStatus] = useState(false);
 
-  // Fetch classes on mount
+  // Fetch classes (with semester), subjects, and test types on mount and when semester changes
   useEffect(() => {
     setLoading(true);
     setError(null);
-    api
-      .getTeacherClasses()
-      .then((data) => {
-        setClasses(data);
-        if (data.length > 0) {
-          setSelectedClass(data[0]);
+    Promise.all([
+      api.getTeacherClasses({ MaHocKy: selectedSemester }),
+      api.listSubjects(),
+      api.listTestTypes(),
+    ])
+      .then(([classData, subjectData, testTypesData]) => {
+        setClasses(classData);
+        setSubjects(subjectData);
+        setTestTypes(testTypesData || []);
+        if (classData.length > 0) {
+          setSelectedClass(classData[0]);
+        } else {
+          setSelectedClass(null);
+          setGrades([]);
         }
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [selectedSemester]);
 
-  // Populate grades when class changes
+  // Fetch students for selected class + semester, then populate grades
   useEffect(() => {
-    if (selectedClass?.DanhSachHocSinh) {
-      const gradeEntries: GradeEntry[] = selectedClass.DanhSachHocSinh.map((student: StudentInClass) => ({
-        MaHocSinh: student.MaHocSinh,
-        HoTen: student.HoTen,
-        scores: {
-          mieng15Phut: '',
-          mot1Tiet: '',
-          giuaKy: '',
-          cuoiKy: ''
-        },
-        average: null
-      }));
-      setGrades(gradeEntries);
-    }
-  }, [selectedClass]);
+    const loadStudents = async () => {
+      if (!selectedClass?.MaLop || !selectedSemester) {
+        setGrades([]);
+        return;
+      }
+      try {
+        setLoading(true);
+        const students = await api.getStudentsByClass(String(selectedClass.MaLop), selectedSemester);
+        const gradeEntries: GradeEntry[] = students.map((student: StudentInClass) => ({
+          MaHocSinh: student.MaHocSinh,
+          HoTen: student.HoTen,
+          scores: {
+            mieng15Phut: '',
+            mot1Tiet: '',
+            giuaKy: '',
+            cuoiKy: ''
+          },
+          average: null
+        }));
+        setGrades(gradeEntries);
+      } catch (err: any) {
+        setError(err.message || 'Không thể tải danh sách học sinh');
+        setGrades([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadStudents();
+  }, [selectedClass, selectedSemester]);
 
   const parseScores = (scoreString: string): number[] => {
     if (!scoreString.trim()) return [];
@@ -91,6 +115,44 @@ export function GradeEntry() {
     
     const average = (cuoiKy * 3 + giuaKy * 3 + tiet1Avg * 2 + mieng15Avg) / 9;
     return Math.round(average * 10) / 10;
+  };
+
+  const resolveTestTypeIds = () => {
+    const norm = (s: string) => s.toLowerCase().replace(/\s|_/g, "");
+    const map: Record<string, number | undefined> = {};
+    const list = Array.isArray(testTypes) ? testTypes : [];
+
+    // Pass 1: keyword matching
+    for (const t of list) {
+      const n = norm(t.TenLHKT || "");
+      if (!map.mieng && (n.includes("mieng") || n.includes("15"))) map.mieng = t.MaLHKT;
+      if (!map.tiet && (n.includes("tiet") || n.includes("1tiet"))) map.tiet = t.MaLHKT;
+      if (!map.giuaky && (n.includes("giuaky") || n.includes("gk"))) map.giuaky = t.MaLHKT;
+      if (!map.cuoiky && (n.includes("cuoiky") || n.includes("ck"))) map.cuoiky = t.MaLHKT;
+    }
+
+    // Pass 2: fallback assign by position if still missing and there are enough items
+    if (list.length >= 4) {
+      const sorted = [...list].sort((a, b) => Number(a.MaLHKT) - Number(b.MaLHKT));
+      if (!map.mieng) map.mieng = sorted[0]?.MaLHKT;
+      if (!map.tiet) map.tiet = sorted[1]?.MaLHKT;
+      if (!map.giuaky) map.giuaky = sorted[2]?.MaLHKT;
+      if (!map.cuoiky) map.cuoiky = sorted[3]?.MaLHKT;
+    }
+
+    // Pass 3: if still missing, throw with helpful message
+    const missing: string[] = [];
+    if (!map.mieng) missing.push("miệng/15p");
+    if (!map.tiet) missing.push("1 tiết");
+    if (!map.giuaky) missing.push("giữa kỳ");
+    if (!map.cuoiky) missing.push("cuối kỳ");
+
+    if (missing.length) {
+      const available = list.map((t) => `${t.MaLHKT}:${t.TenLHKT}`).join(", ") || "(không có)";
+      throw new Error(`Thiếu cấu hình loại hình kiểm tra: ${missing.join(", ")}. Hiện có: ${available}`);
+    }
+
+    return map;
   };
 
   const handleScoreChange = (studentId: string, field: keyof GradeEntry['scores'], value: string) => {
@@ -129,6 +191,11 @@ export function GradeEntry() {
       setSavingStatus(true);
       setError(null);
 
+      const lhktMap = resolveTestTypeIds();
+      if (!lhktMap.mieng || !lhktMap.tiet || !lhktMap.giuaky || !lhktMap.cuoiky) {
+        throw new Error('Thiếu cấu hình loại hình kiểm tra (mieng/15p, 1 tiết, giữa kỳ, cuối kỳ). Vui lòng kiểm tra LOAIHINHKIEMTRA.');
+      }
+
       // Construct scores array with test type details
       const scoresArray = grades
         .filter(g => g.scores.giuaKy.trim() || g.scores.cuoiKy.trim())
@@ -137,7 +204,7 @@ export function GradeEntry() {
           details: [
             ...(g.scores.mieng15Phut.trim() 
               ? parseScores(g.scores.mieng15Phut).map((score, idx) => ({
-                  MaLHKT: '1',
+                  MaLHKT: String(lhktMap.mieng!),
                   Lan: idx + 1,
                   Diem: score
                 }))
@@ -145,18 +212,18 @@ export function GradeEntry() {
             ),
             ...(g.scores.mot1Tiet.trim()
               ? parseScores(g.scores.mot1Tiet).map((score, idx) => ({
-                  MaLHKT: '2',
+                  MaLHKT: String(lhktMap.tiet!),
                   Lan: idx + 1,
                   Diem: score
                 }))
               : []
             ),
             ...(g.scores.giuaKy.trim()
-              ? [{ MaLHKT: '3', Lan: 1, Diem: parseFloat(g.scores.giuaKy) }]
+              ? [{ MaLHKT: String(lhktMap.giuaky!), Lan: 1, Diem: parseFloat(g.scores.giuaKy) }]
               : []
             ),
             ...(g.scores.cuoiKy.trim()
-              ? [{ MaLHKT: '4', Lan: 1, Diem: parseFloat(g.scores.cuoiKy) }]
+              ? [{ MaLHKT: String(lhktMap.cuoiky!), Lan: 1, Diem: parseFloat(g.scores.cuoiKy) }]
               : []
             )
           ]
@@ -164,8 +231,8 @@ export function GradeEntry() {
 
       await api.enterGradebook({
         MaLop: selectedClass.MaLop,
-        MaHocKy: selectedSemester,
-        MaMon: selectedSubject,
+        MaHocKy: selectedSemester, // Already numeric: '1' or '2'
+        MaMon: selectedSubject, // This is now MaMonHoc (numeric)
         scores: scoresArray
       });
 
@@ -203,7 +270,7 @@ export function GradeEntry() {
             <select
               value={selectedClass?.MaLop || ''}
               onChange={(e) => {
-                const selected = classes.find(c => c.MaLop === e.target.value);
+                const selected = classes.find(c => String(c.MaLop) === e.target.value);
                 setSelectedClass(selected || null);
               }}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
@@ -218,13 +285,18 @@ export function GradeEntry() {
           </div>
           <div>
             <label className="block text-gray-700 mb-2">Môn học</label>
-            <input
-              type="text"
-              placeholder="VD: Toán, Văn, Lý..."
+            <select
               value={selectedSubject}
               onChange={(e) => setSelectedSubject(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
+            >
+              <option value="">-- Chọn môn học --</option>
+              {subjects.map((subject) => (
+                <option key={subject.MaMonHoc} value={subject.MaMonHoc}>
+                  {subject.TenMonHoc}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-gray-700 mb-2">Học kỳ</label>
@@ -233,8 +305,8 @@ export function GradeEntry() {
               onChange={(e) => setSelectedSemester(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
             >
-              <option value="HK1">Học kỳ I</option>
-              <option value="HK2">Học kỳ II</option>
+              <option value="1">Học kỳ I</option>
+              <option value="2">Học kỳ II</option>
             </select>
           </div>
         </div>

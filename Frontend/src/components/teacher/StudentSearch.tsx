@@ -118,7 +118,7 @@ export function StudentSearch() {
 
                 <div className="pb-4 border-b border-gray-200">
                   <p className="text-gray-600 mb-1">Số điện thoại</p>
-                  <p className="text-gray-900">{selectedStudent.SoDienThoai || '-'}</p>
+                  <p className="text-gray-900">{selectedStudent.SDT || selectedStudent.SoDienThoai || '-'}</p>
                 </div>
 
                 <div>

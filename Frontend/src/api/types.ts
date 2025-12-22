@@ -2,11 +2,15 @@
 export interface GradeRecord {
   MaMon: string;
   TenMon: string;
+  DiemMieng?: number | null;
+  Diem15Phut?: number | null;
+  Diem1Tiet?: number | null;
   DiemGiuaKy?: number;
   DiemCuoiKy?: number;
   DiemTBMon?: number;
   HeSo?: number;
   XepLoai?: string; // Xuất sắc, Giỏi, Khá, Yếu, Kém
+  details?: ScoreDetail[];
 }
 
 // Semester average for a student in a class
@@ -27,7 +31,8 @@ export interface StudentInClass {
   GioiTinh: string;
   NgaySinh: string;
   Email?: string;
-  SoDienThoai?: string;
+  SDT?: string; // Backend uses SDT
+  SoDienThoai?: string; // Deprecated, use SDT
   DiaChi?: string;
   DiemTBHocKy?: number;
 }
@@ -52,7 +57,11 @@ export interface ScoreDetail {
 
 export interface StudentScore {
   MaHocSinh: string;
+  MaMon?: string;
   HoTen?: string;
+  DiemMieng?: number | null;
+  Diem15Phut?: number | null;
+  Diem1Tiet?: number | null;
   DiemGiuaKy?: number;
   DiemCuoiKy?: number;
   DiemTBMon?: number;
@@ -65,7 +74,8 @@ export interface StudentSearchResult {
   GioiTinh: string;
   NgaySinh: string;
   Email?: string;
-  SoDienThoai?: string;
+  SDT?: string; // Backend uses SDT
+  SoDienThoai?: string; // Deprecated, use SDT
   DiaChi?: string;
 }
 
@@ -81,5 +91,59 @@ export interface AuthResponse {
     role?: 'admin' | 'teacher' | 'student';
     VaiTro?: 'admin' | 'teacher' | 'student';
   };
+}
+
+// User Management Types
+export interface Quyen {
+  MaQuyen: number;
+  PhanQuyenHeThong?: number;
+  ThayDoiThamSo?: number;
+  ThayDoiQuyDinh?: number;
+  DieuChinhNghiepVu?: number;
+  TraCuuDiemVaLopHoc?: number;
+  TraCuuHocSinh?: number;
+}
+
+export interface NhomNguoiDung {
+  MaNhomNguoiDung: number;
+  TenNhomNguoiDung: string;
+  MaQuyen: number;
+  quyen?: Quyen;
+}
+
+export interface HocSinhInfo {
+  MaHocSinh: string;
+  HoTen: string;
+  Email?: string;
+}
+
+export interface NguoiDung {
+  MaNguoiDung: number;
+  TenDangNhap: string;
+  HoVaTen?: string;
+  Email?: string;
+  MaNhomNguoiDung: number;
+  MaHocSinh?: string;
+  nhom?: NhomNguoiDung;
+  hocSinh?: HocSinhInfo;
+}
+
+export interface CreateNguoiDungPayload {
+  TenDangNhap: string;
+  MatKhau: string;
+  HoVaTen?: string;
+  Email?: string;
+  MaNhomNguoiDung: number;
+  MaHocSinh?: string;
+  sendEmail?: boolean;
+}
+
+export interface UpdateNguoiDungPayload {
+  TenDangNhap?: string;
+  MatKhau?: string;
+  HoVaTen?: string;
+  Email?: string;
+  MaNhomNguoiDung?: number;
+  MaHocSinh?: string;
 }
 

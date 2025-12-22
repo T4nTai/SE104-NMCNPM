@@ -7,15 +7,15 @@ import { ThamSo } from "./config.model.js";
 
 export function initAssociations() {
   // LOP -> KHOILOP, NAMHOC
-  Lop.belongsTo(KhoiLop, { foreignKey: "MaKhoiLop" });
-  Lop.belongsTo(NamHoc, { foreignKey: "MaNamHoc" });
+  Lop.belongsTo(KhoiLop, { foreignKey: "MaKhoiLop", as: "KhoiLop" });
+  Lop.belongsTo(NamHoc, { foreignKey: "MaNamHoc", as: "NamHoc" });
   KhoiLop.hasMany(Lop, { foreignKey: "MaKhoiLop" });
   NamHoc.hasMany(Lop, { foreignKey: "MaNamHoc" });
 
   // HOCSINH_LOP -> LOP, HOCSINH, HOCKY
-  HocSinhLop.belongsTo(Lop, { foreignKey: "MaLop" });
-  HocSinhLop.belongsTo(HocSinh, { foreignKey: "MaHocSinh" });
-  HocSinhLop.belongsTo(HocKy, { foreignKey: "MaHocKy" });
+  HocSinhLop.belongsTo(Lop, { foreignKey: "MaLop", as: "Lop" });
+  HocSinhLop.belongsTo(HocSinh, { foreignKey: "MaHocSinh", as: "HocSinh" });
+  HocSinhLop.belongsTo(HocKy, { foreignKey: "MaHocKy", as: "HocKy" });
 
   Lop.hasMany(HocSinhLop, { foreignKey: "MaLop" });
   HocSinh.hasMany(HocSinhLop, { foreignKey: "MaHocSinh" });
@@ -78,6 +78,12 @@ export function initAssociations() {
   NhomNguoiDung.hasMany(NguoiDung, { foreignKey: "MaNhomNguoiDung", as: "users" });
 
   // THAMSO -> NAMHOC
-  ThamSo.belongsTo(NamHoc, { foreignKey: "MaNamHoc" });
-  NamHoc.hasMany(ThamSo, { foreignKey: "MaNamHoc" });
+  NamHoc.hasOne(ThamSo, { foreignKey: "MaNamHoc", sourceKey: "MaNH", as: "thamSo" });
+  ThamSo.belongsTo(NamHoc, { foreignKey: "MaNamHoc", targetKey: "MaNH", as: "namHoc" });
+
+  // Removed HocKy <-> NamHoc association because MaNamHoc column is no longer used
+
+  // NGUOIDUNG -> HOCSINH
+  NguoiDung.belongsTo(HocSinh, { foreignKey: "MaHocSinh", targetKey: "MaHocSinh", as: "hocSinh" });
+  HocSinh.hasOne(NguoiDung, { foreignKey: "MaHocSinh", sourceKey: "MaHocSinh", as: "nguoiDung" });
 }

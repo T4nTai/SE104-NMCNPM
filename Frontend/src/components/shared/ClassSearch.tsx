@@ -1,89 +1,90 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Users, Search, Filter } from 'lucide-react';
-
-interface Student {
-  id: string;
-  name: string;
-  gender: string;
-  birthYear: number;
-  address: string;
-}
-
-interface ClassInfo {
-  id: string;
-  name: string;
-  grade: string;
-  totalStudents: number;
-  students: Student[];
-}
-
-const MOCK_CLASSES: ClassInfo[] = [
-  {
-    id: '1',
-    name: '10A1',
-    grade: 'Khối 10',
-    totalStudents: 42,
-    students: [
-      { id: '1', name: 'Nguyễn Văn An', gender: 'Nam', birthYear: 2008, address: '123 Đường ABC, Quận 1, TP.HCM' },
-      { id: '2', name: 'Trần Thị Bình', gender: 'Nữ', birthYear: 2008, address: '456 Đường XYZ, Quận 2, TP.HCM' },
-      { id: '3', name: 'Lê Văn Cường', gender: 'Nam', birthYear: 2008, address: '789 Đường DEF, Quận 3, TP.HCM' },
-      { id: '4', name: 'Phạm Thị Dung', gender: 'Nữ', birthYear: 2008, address: '321 Đường GHI, Quận 4, TP.HCM' },
-      { id: '5', name: 'Hoàng Văn Em', gender: 'Nam', birthYear: 2008, address: '654 Đường JKL, Quận 5, TP.HCM' },
-    ]
-  },
-  {
-    id: '2',
-    name: '10A2',
-    grade: 'Khối 10',
-    totalStudents: 40,
-    students: [
-      { id: '6', name: 'Vũ Thị Phương', gender: 'Nữ', birthYear: 2008, address: '987 Đường MNO, Quận 6, TP.HCM' },
-      { id: '7', name: 'Đỗ Văn Giang', gender: 'Nam', birthYear: 2008, address: '147 Đường PQR, Quận 7, TP.HCM' },
-      { id: '8', name: 'Bùi Thị Hạnh', gender: 'Nữ', birthYear: 2008, address: '258 Đường STU, Quận 8, TP.HCM' },
-      { id: '9', name: 'Đinh Văn Ích', gender: 'Nam', birthYear: 2008, address: '369 Đường VWX, Quận 9, TP.HCM' },
-    ]
-  },
-  {
-    id: '3',
-    name: '11A1',
-    grade: 'Khối 11',
-    totalStudents: 38,
-    students: [
-      { id: '10', name: 'Trương Thị Kim', gender: 'Nữ', birthYear: 2007, address: '741 Đường YZ, Quận 10, TP.HCM' },
-      { id: '11', name: 'Lý Văn Long', gender: 'Nam', birthYear: 2007, address: '852 Đường ABC, Quận 11, TP.HCM' },
-      { id: '12', name: 'Mai Thị Nga', gender: 'Nữ', birthYear: 2007, address: '963 Đường DEF, Quận 12, TP.HCM' },
-    ]
-  },
-  {
-    id: '4',
-    name: '12A1',
-    grade: 'Khối 12',
-    totalStudents: 35,
-    students: [
-      { id: '13', name: 'Ngô Văn Oanh', gender: 'Nam', birthYear: 2006, address: '159 Đường GHI, Bình Thạnh, TP.HCM' },
-      { id: '14', name: 'Phan Thị Phương', gender: 'Nữ', birthYear: 2006, address: '753 Đường JKL, Phú Nhuận, TP.HCM' },
-      { id: '15', name: 'Quách Văn Quyền', gender: 'Nam', birthYear: 2006, address: '951 Đường MNO, Tân Bình, TP.HCM' },
-    ]
-  },
-];
+import { api } from '../../api/client';
+import { ClassInfo, StudentInClass } from '../../api/types';
 
 interface ClassSearchProps {
   userRole: 'teacher' | 'student';
 }
 
 export function ClassSearch({ userRole }: ClassSearchProps) {
-  const [selectedClass, setSelectedClass] = useState<ClassInfo | null>(
-    userRole === 'student' ? MOCK_CLASSES[0] : null
-  );
+  const [classes, setClasses] = useState<ClassInfo[]>([]);
+  const [selectedClass, setSelectedClass] = useState<ClassInfo | null>(null);
+  const [students, setStudents] = useState<StudentInClass[]>([]);
+  const [loadingClasses, setLoadingClasses] = useState(false);
+  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGrade, setSelectedGrade] = useState<string>('all');
   const [selectedYear, setSelectedYear] = useState('2024-2025');
   const [selectedSemester, setSelectedSemester] = useState('HK1');
 
-  const filteredClasses = MOCK_CLASSES.filter(c =>
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-    (selectedGrade === 'all' || c.grade === selectedGrade)
-  );
+  const filteredClasses = classes
+    .map((c) => ({
+      id: String((c as any).MaLop || (c as any).MaLop),
+      name: (c as any).TenLop || (c as any).name || '',
+      grade: (c as any).TenKhoiLop || (c as any).MaKhoiLop || 'Khối',
+      totalStudents: (c as any).SiSo || (c as any).DanhSachHocSinh?.length || 0,
+      raw: c,
+    }))
+    .filter((c) => c.name.toLowerCase().includes(searchTerm.toLowerCase()) && (selectedGrade === 'all' || c.grade === selectedGrade));
+
+  const clearError = () => setError(null);
+
+  const loadStudents = useCallback(async (MaLop?: string) => {
+    if (!MaLop) return setStudents([]);
+    setLoadingStudents(true);
+    try {
+      const list = await api.getStudentsByClass(MaLop, selectedSemester);
+      setStudents(list as StudentInClass[]);
+    } catch (err: any) {
+      setError(err.message || 'Không thể tải danh sách học sinh');
+      setStudents([]);
+    } finally {
+      setLoadingStudents(false);
+    }
+  }, [selectedSemester]);
+
+  // Load classes for teacher or student's own classes
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      setLoadingClasses(true);
+      clearError();
+      try {
+        if (userRole === 'teacher') {
+          const cls = await api.getTeacherClasses({ MaHocKy: selectedSemester });
+          if (!mounted) return;
+          setClasses(cls as ClassInfo[]);
+          if (!selectedClass && (cls as any)?.[0]) {
+            setSelectedClass((cls as any)[0]);
+            loadStudents((cls as any)[0].MaLop);
+          }
+        } else {
+          const my = await api.getMyClasses(selectedSemester);
+          if (!mounted) return;
+          const mapped = (my || []).map((m: any) => ({
+            MaLop: m.MaLop,
+            TenLop: m.TenLop,
+            MaKhoiLop: m.MaKhoiLop,
+            SiSo: m.SiSo || 0,
+          }));
+          setClasses(mapped as ClassInfo[]);
+          if ((mapped as any)?.[0]) {
+            setSelectedClass((mapped as any)[0]);
+            loadStudents((mapped as any)[0].MaLop);
+          }
+        }
+      } catch (err: any) {
+        if (!mounted) return;
+        setError(err.message || 'Không thể tải danh sách lớp');
+      } finally {
+        if (mounted) setLoadingClasses(false);
+      }
+    };
+    load();
+    return () => { mounted = false; };
+  }, [userRole, selectedSemester]);
 
   return (
     <div>
@@ -154,13 +155,20 @@ export function ClassSearch({ userRole }: ClassSearchProps) {
             </div>
 
             <div className="space-y-2 max-h-[500px] overflow-y-auto">
-              {filteredClasses.length > 0 ? (
+              {loadingClasses ? (
+                <div className="text-center py-8 text-gray-500">Đang tải danh sách lớp...</div>
+              ) : filteredClasses.length > 0 ? (
                 filteredClasses.map((classItem) => (
                   <button
                     key={classItem.id}
-                    onClick={() => setSelectedClass(classItem)}
+                    onClick={() => {
+                      setSelectedClass(classItem.raw || (classItem as any));
+                      // load students
+                      const MaLop = (classItem.raw || classItem).MaLop || (classItem.raw || classItem).MaLop;
+                      loadStudents(MaLop);
+                    }}
                     className={`w-full text-left p-3 rounded-lg transition-colors ${
-                      selectedClass?.id === classItem.id
+                      selectedClass && ((selectedClass as any).MaLop || (selectedClass as any).id) === classItem.id
                         ? 'bg-green-100 border-2 border-green-600'
                         : 'bg-gray-50 hover:bg-gray-100'
                     }`}
@@ -192,11 +200,10 @@ export function ClassSearch({ userRole }: ClassSearchProps) {
                   <Users className="w-8 h-8 text-indigo-600" />
                 </div>
                 <div>
-                  <h2 className="text-gray-900">Lớp {selectedClass.name}</h2>
-                  <p className="text-gray-600">{selectedClass.grade} - Sĩ số: {selectedClass.totalStudents} học sinh</p>
+                  <h2 className="text-gray-900">Lớp {(selectedClass as any).TenLop || (selectedClass as any).name}</h2>
+                  <p className="text-gray-600">{(selectedClass as any).TenKhoiLop || (selectedClass as any).MaKhoiLop || ''} - Sĩ số: {(selectedClass as any).SiSo || students.length} học sinh</p>
                 </div>
               </div>
-
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-gray-50">
@@ -209,15 +216,21 @@ export function ClassSearch({ userRole }: ClassSearchProps) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {selectedClass.students.map((student, index) => (
-                      <tr key={student.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-gray-600">{index + 1}</td>
-                        <td className="px-4 py-3 text-gray-900">{student.name}</td>
-                        <td className="px-4 py-3 text-gray-600">{student.gender}</td>
-                        <td className="px-4 py-3 text-gray-600">{student.birthYear}</td>
-                        <td className="px-4 py-3 text-gray-600">{student.address}</td>
-                      </tr>
-                    ))}
+                    {loadingStudents ? (
+                      <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-500">Đang tải danh sách học sinh...</td></tr>
+                    ) : students.length > 0 ? (
+                      students.map((student, index) => (
+                        <tr key={(student as any).MaHocSinh || index} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-gray-600">{index + 1}</td>
+                          <td className="px-4 py-3 text-gray-900">{(student as any).HoTen || (student as any).TenHocSinh}</td>
+                          <td className="px-4 py-3 text-gray-600">{(student as any).GioiTinh || (student as any).gioiTinh || '-'}</td>
+                          <td className="px-4 py-3 text-gray-600">{(student as any).NgaySinh ? new Date((student as any).NgaySinh).getFullYear() : '-'}</td>
+                          <td className="px-4 py-3 text-gray-600">{(student as any).DiaChi || (student as any).address || '-'}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr><td colSpan={5} className="px-4 py-6 text-center text-gray-500">Không có học sinh</td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>

@@ -4,6 +4,7 @@ import { TeacherController } from "../controllers/teacher.controller.js";
 const TeacherRoute = Router();
 
 TeacherRoute.get("/classes", TeacherController.listClasses);
+TeacherRoute.get("/classes/:MaLop/semesters/:MaHocKy/students", TeacherController.getStudentsByClass);
 
 TeacherRoute.post("/classes/:MaLop/semesters/:MaHocKy/students", TeacherController.addStudentToClass);
 

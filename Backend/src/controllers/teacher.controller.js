@@ -1,4 +1,5 @@
 import { TeacherService } from "../services/teacher.service.js";
+import { sendAccountCreationEmail } from "../ultis/email.js";
 
 export class TeacherController {
   static async listClasses(req, res, next) {
@@ -6,8 +7,20 @@ export class TeacherController {
       const rows = await TeacherService.listClasses({
         MaNamHoc: req.query.MaNamHoc ? Number(req.query.MaNamHoc) : null,
         MaKhoiLop: req.query.MaKhoiLop ? Number(req.query.MaKhoiLop) : null,
+        MaHocKy: req.query.MaHocKy ? Number(req.query.MaHocKy) : null,
       });
       res.json({ data: rows });
+    } catch (e) { next(e); }
+  }
+
+  static async getStudentsByClass(req, res, next) {
+    try {
+      const { MaLop, MaHocKy } = req.params;
+      const students = await TeacherService.getStudentsByClass({
+        MaLop: Number(MaLop),
+        MaHocKy: Number(MaHocKy),
+      });
+      res.json({ data: students });
     } catch (e) { next(e); }
   }
 
@@ -20,6 +33,20 @@ export class TeacherController {
         MaHocKy: Number(MaHocKy),
         student: req.body,
       });
+      // Send email with account credentials if a new account was created
+      if (row?.createdAccount && row.createdAccount.Email) {
+        const { Email, HoTen, TenDangNhap, tempPass } = row.createdAccount;
+        // Fire-and-forget; do not block response
+        sendAccountCreationEmail({
+          email: Email,
+          hoVaTen: HoTen,
+          tenDangNhap: TenDangNhap,
+          matKhau: tempPass,
+          userType: "student",
+        }).catch(() => {/* ignore email errors to not break the API */});
+      }
+
+      // Return both enroll info and createdAccount metadata for clients to show messages
       res.status(201).json({ data: row });
     } catch (e) { next(e); }
   }
@@ -55,6 +82,7 @@ export class TeacherController {
       const data = await TeacherService.lookupScoresOfStudent({
         MaHocSinh,
         MaHocKy: req.query.MaHocKy ? Number(req.query.MaHocKy) : null,
+        MaMon: req.query.MaMon ? Number(req.query.MaMon) : null,
       });
       res.json({ data });
     } catch (e) { next(e); }

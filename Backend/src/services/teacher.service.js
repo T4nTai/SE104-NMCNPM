@@ -1,18 +1,70 @@
 import sequelize  from "../configs/sequelize.js";
+import bcrypt from "bcryptjs";
 import { Op } from "sequelize";
 
 import { Lop, HocSinh, HocSinhLop } from "../models/student.model.js";
-import { MonHoc, LoaiHinhKiemTra } from "../models/academic.model.js";
+import { MonHoc, LoaiHinhKiemTra, KhoiLop } from "../models/academic.model.js";
 import { ThamSo } from "../models/config.model.js";
+import { NguoiDung, NhomNguoiDung } from "../models/auth.model.js";
 import { BangDiemMon, CTBangDiemMonHocSinh, CTBangDiemMonLHKT } from "../models/gradebook.model.js";
 
 export class TeacherService {
   // ===== XEM DS LOP =====
-  static async listClasses({ MaNamHoc = null, MaKhoiLop = null } = {}) {
+  static async listClasses({ MaNamHoc = null, MaKhoiLop = null, MaHocKy = null } = {}) {
     const where = {};
     if (MaNamHoc != null) where.MaNamHoc = MaNamHoc;
     if (MaKhoiLop != null) where.MaKhoiLop = MaKhoiLop;
-    return await Lop.findAll({ where, order: [["MaLop", "ASC"]] });
+    
+    const classes = await Lop.findAll({
+      where,
+      include: [{
+        model: KhoiLop,
+        as: "KhoiLop",
+        attributes: ["TenKL"],
+      }],
+      order: [["MaLop", "ASC"]],
+    });
+
+    // Count students for each class if MaHocKy is provided
+    if (MaHocKy) {
+      const classesWithCount = await Promise.all(
+        classes.map(async (cls) => {
+          const count = await HocSinhLop.count({
+            where: { MaLop: cls.MaLop, MaHocKy },
+          });
+          return {
+            ...cls.toJSON(),
+            SoLuongHocSinh: count,
+            TenKhoiLop: cls.KhoiLop?.TenKL || null,
+          };
+        })
+      );
+      return classesWithCount;
+    }
+
+    return classes.map(cls => ({
+      ...cls.toJSON(),
+      TenKhoiLop: cls.KhoiLop?.TenKL || null,
+    }));
+  }
+
+  // ===== LAY DS HOC SINH THEO LOP VA HOC KY =====
+  static async getStudentsByClass({ MaLop, MaHocKy }) {
+    if (!MaLop || !MaHocKy) throw { status: 400, message: "MaLop and MaHocKy are required" };
+    
+    const enrollments = await HocSinhLop.findAll({
+      where: { MaLop, MaHocKy },
+      include: [{
+        model: HocSinh,
+        as: "HocSinh",
+      }],
+      order: [["MaHocSinh", "ASC"]],
+    });
+
+    return enrollments.map(e => ({
+      ...e.HocSinh?.toJSON(),
+      DiemTBHK: e.DiemTBHK,
+    }));
   }
 
   // ===== THEM HOC SINH VAO LOP =====
@@ -37,7 +89,6 @@ export class TeacherService {
       const duplicated = await HocSinhLop.findOne({ where: { MaLop, MaHocSinh, MaHocKy }, transaction: t });
       if (duplicated) throw { status: 400, message: "Học sinh đã có trong lớp ở học kỳ này" };
 
-
       const lop = await Lop.findByPk(MaLop, { transaction: t });
       if (lop?.MaNamHoc) {
         const ts = await ThamSo.findOne({ where: { MaNamHoc: lop.MaNamHoc }, transaction: t });
@@ -47,7 +98,47 @@ export class TeacherService {
         }
       }
 
-      return await HocSinhLop.create({ MaLop, MaHocSinh, MaHocKy }, { transaction: t });
+      // Enroll student to class/semester
+      const enroll = await HocSinhLop.create({ MaLop, MaHocSinh, MaHocKy }, { transaction: t });
+
+      // Auto-create student account if missing and email provided
+      // Do inside transaction for DB, but email will be sent after commit.
+      let createdAccount = null;
+      if (Email) {
+        const existedAcc = await NguoiDung.findOne({ where: { MaHocSinh }, transaction: t });
+        if (!existedAcc) {
+          const studentGroup = await NhomNguoiDung.findOne({ where: { TenNhomNguoiDung: "student" }, transaction: t });
+          if (!studentGroup) throw { status: 500, message: "Chưa có nhóm 'student' trong NHOMNGUOIDUNG" };
+
+          // username pattern: hs{MaHocSinh} (ensure unique by fallback with suffix)
+          let TenDangNhap = `${MaHocSinh}`;
+          const existedUsername = await NguoiDung.findOne({ where: { TenDangNhap }, transaction: t });
+          if (existedUsername) {
+            TenDangNhap = `hs${MaHocSinh}_${Date.now().toString().slice(-4)}`;
+          }
+
+          // generate random temporary password
+          const tempPass = Math.random().toString(36).slice(-10);
+          const MatKhau = await bcrypt.hash(tempPass, 10);
+
+          const user = await NguoiDung.create(
+            {
+              TenDangNhap,
+              MatKhau,
+              HoVaTen: HoTen,
+              Email,
+              MaNhomNguoiDung: studentGroup.MaNhomNguoiDung,
+              MaHocSinh,
+            },
+            { transaction: t }
+          );
+
+          createdAccount = { TenDangNhap, tempPass, Email, HoTen };
+        }
+      }
+
+      // Attach meta to return (email will be sent after commit externally)
+      return { enroll, createdAccount };
     });
   }
 
@@ -65,6 +156,9 @@ export class TeacherService {
       await CTBangDiemMonLHKT.destroy({ where: { }, transaction: t, individualHooks: false }); // nếu bạn có FK cascade thì bỏ dòng này
       await CTBangDiemMonHocSinh.destroy({ where: { MaHocSinh }, transaction: t });
       await HocSinhLop.destroy({ where: { MaHocSinh }, transaction: t });
+
+      // Xoá tài khoản người dùng gắn với học sinh để tránh lỗi FK
+      await NguoiDung.destroy({ where: { MaHocSinh }, transaction: t });
 
       const hs = await HocSinh.findByPk(MaHocSinh, { transaction: t });
       if (!hs) throw { status: 404, message: "HocSinh not found" };
@@ -192,24 +286,84 @@ export class TeacherService {
   }
 
   // ===== TRA CUU DIEM =====
-  static async lookupScoresOfStudent({ MaHocSinh, MaHocKy = null }) {
-    // trả về điểm TB HK + các môn
+  static async lookupScoresOfStudent({ MaHocSinh, MaHocKy = null, MaMon = null }) {
+    // trả về điểm TB HK + chi tiết từng loại hình kiểm tra theo môn
     const whereEnroll = { MaHocSinh };
     if (MaHocKy != null) whereEnroll.MaHocKy = MaHocKy;
 
     const enrolls = await HocSinhLop.findAll({ where: whereEnroll, order: [["MaHocKy", "ASC"]] });
 
-    // lấy BANGDIEMMON + CT theo học sinh
+    // preload LoaiHinhKiemTra + helper map
+    const lhktList = await LoaiHinhKiemTra.findAll();
+    const lhktMap = new Map(lhktList.map((x) => [x.MaLHKT, x.TenLHKT]));
+
+    const classify = (ma, ten) => {
+      const name = (ten || '').toLowerCase();
+      if (name.includes('miệng') || name.includes('mieng')) return 'mieng';
+      if (name.includes('15')) return '15p';
+      if (name.includes('1 tiết') || name.includes('1t') || name.includes('tiết')) return '1tiet';
+      if (name.includes('giữa') || name.includes('giuaki')) return 'giuaky';
+      if (name.includes('cuối') || name.includes('cuoiki')) return 'cuoiky';
+      // fallback numeric mapping if TenLHKT không rõ
+      if (Number(ma) === 1) return 'mieng';
+      if (Number(ma) === 2) return '15p';
+      if (Number(ma) === 3) return '1tiet';
+      if (Number(ma) === 4) return 'giuaky';
+      if (Number(ma) === 5) return 'cuoiky';
+      return null;
+    };
+
+    const avg = (arr) => {
+      const vals = arr.filter((x) => x != null && !Number.isNaN(Number(x))).map(Number);
+      if (!vals.length) return null;
+      return Number((vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(2));
+    };
+
     const result = [];
     for (const e of enrolls) {
-      const bdms = await BangDiemMon.findAll({ where: { MaLop: e.MaLop, MaHocKy: e.MaHocKy } });
-      const monScores = [];
+      const bdmWhere = { MaLop: e.MaLop, MaHocKy: e.MaHocKy };
+      if (MaMon != null) bdmWhere.MaMon = MaMon;
 
+      const bdms = await BangDiemMon.findAll({ where: bdmWhere });
+      const monIds = bdms.map((b) => b.MaMon);
+      const monList = monIds.length ? await MonHoc.findAll({ where: { MaMonHoc: { [Op.in]: monIds } } }) : [];
+      const monMap = new Map(monList.map((m) => [m.MaMonHoc, m.TenMonHoc]));
+
+      const monScores = [];
       for (const bdm of bdms) {
         const ct = await CTBangDiemMonHocSinh.findOne({
           where: { MaBangDiemMon: bdm.MaBangDiemMon, MaHocSinh },
         });
-        monScores.push({ MaMon: bdm.MaMon, MaBangDiemMon: bdm.MaBangDiemMon, DiemTBMon: ct?.DiemTBMon ?? null });
+
+        const details = ct
+          ? await CTBangDiemMonLHKT.findAll({ where: { MaCTBangDiemMon: ct.MaCTBangDiemMon } })
+          : [];
+
+        const enriched = details.map((d) => ({
+          MaLHKT: d.MaLHKT,
+          TenLHKT: lhktMap.get(d.MaLHKT) || null,
+          Lan: d.Lan,
+          Diem: d.Diem,
+        }));
+
+        const bucket = { mieng: [], '15p': [], '1tiet': [], giuaky: [], cuoiky: [] };
+        for (const d of enriched) {
+          const tag = classify(d.MaLHKT, d.TenLHKT);
+          if (tag && d.Diem != null) bucket[tag].push(Number(d.Diem));
+        }
+
+        monScores.push({
+          MaMon: bdm.MaMon,
+          TenMonHoc: monMap.get(bdm.MaMon) || null,
+          MaBangDiemMon: bdm.MaBangDiemMon,
+          DiemTBMon: ct?.DiemTBMon ?? null,
+          DiemMieng: avg(bucket.mieng),
+          Diem15Phut: avg(bucket['15p']),
+          Diem1Tiet: avg(bucket['1tiet']),
+          DiemGiuaKy: avg(bucket.giuaky),
+          DiemCuoiKy: avg(bucket.cuoiky),
+          details: enriched,
+        });
       }
 
       result.push({

@@ -23,18 +23,6 @@ interface AcademicYear {
   name: string;        // Display name: "Nam1-Nam2"
 }
 
-interface SchoolClass {
-  id: string;
-  name: string;
-  gradeLevel: number;
-}
-
-interface SchoolSubject {
-  id: string;
-  name: string;
-  code: string;
-}
-
 const INITIAL_PARAMS: SystemParameters = {
   minAge: 0,
   maxAge: 0,
@@ -73,28 +61,22 @@ export function ParameterSettings() {
     try {
       setLoading(true);
       setError('');
-      const semesters = await api.listSemesters();
+      const years = await api.listAcademicYears();
       
-      // Extract unique academic years from semesters
-      const yearsMap = new Map<number, AcademicYear>();
-      semesters.forEach((semester: any) => {
-        const nh = semester.NamHoc || semester.namHoc;
-        if (nh && nh.MaNH) {
-          yearsMap.set(nh.MaNH, {
-            MaNH: nh.MaNH,
-            Nam1: nh.Nam1,
-            Nam2: nh.Nam2,
-            name: `${nh.Nam1}-${nh.Nam2}`
-          });
-        }
-      });
+      // Map backend response to frontend format
+      const mappedYears = years.map((year: any) => ({
+        MaNH: year.MaNH,
+        Nam1: year.Nam1,
+        Nam2: year.Nam2,
+        name: `${year.Nam1}-${year.Nam2}`
+      }));
       
-      const years = Array.from(yearsMap.values()).sort((a, b) => b.Nam1 - a.Nam1);
-      setAcademicYears(years);
+      const sorted = mappedYears.sort((a: any, b: any) => b.Nam1 - a.Nam1);
+      setAcademicYears(sorted);
       
       // Auto-select most recent year
-      if (years.length > 0 && !selectedYearId) {
-        setSelectedYearId(years[0].MaNH);
+      if (sorted.length > 0 && !selectedYearId) {
+        setSelectedYearId(sorted[0].MaNH);
       }
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Không thể tải danh sách năm học');
@@ -129,25 +111,6 @@ export function ParameterSettings() {
       setLoading(false);
     }
   }
-
-  // Academic Year Management - removed, now using data from API
-  // Class Management
-  const [classes, setClasses] = useState<SchoolClass[]>([]);
-  const [isAddingClass, setIsAddingClass] = useState(false);
-  const [classFormData, setClassFormData] = useState({
-    name: '',
-    gradeLevel: 10
-  });
-
-  // Subject Management
-  const [subjects, setSubjects] = useState<SchoolSubject[]>([]);
-  const [isAddingSubject, setIsAddingSubject] = useState(false);
-  const [subjectFormData, setSubjectFormData] = useState({
-    name: '',
-    code: '',
-    hocKy: '',
-    namHoc: ''
-  });
 
   const handleYearChange = (MaNH: number) => {
     setSelectedYearId(MaNH);
@@ -201,51 +164,7 @@ export function ParameterSettings() {
     }
   };
 
-  // Class handlers
-  const handleSubmitClass = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    const newClass: SchoolClass = {
-      id: Date.now().toString(),
-      ...classFormData
-    };
-    setClasses([...classes, newClass]);
-    setIsAddingClass(false);
-    setClassFormData({
-      name: '',
-      gradeLevel: 10
-    });
-  };
 
-  const handleDeleteClass = (id: string) => {
-    if (confirm('Bạn có chắc chắn muốn xóa lớp này?')) {
-      setClasses(classes.filter(c => c.id !== id));
-    }
-  };
-
-  // Subject handlers
-  const handleSubmitSubject = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    const newSubject: SchoolSubject = {
-      id: Date.now().toString(),
-      ...subjectFormData
-    };
-    setSubjects([...subjects, newSubject]);
-    setIsAddingSubject(false);
-    setSubjectFormData({
-      name: '',
-      code: '',
-      hocKy: '',
-      namHoc: ''
-    });
-  };
-
-  const handleDeleteSubject = (id: string) => {
-    if (confirm('Bạn có chắc chắn muốn xóa môn học này?')) {
-      setSubjects(subjects.filter(s => s.id !== id));
-    }
-  };
 
   return (
     <div>
@@ -439,192 +358,6 @@ export function ParameterSettings() {
           Lưu tham số {selectedYearId ? `cho năm học ${academicYears.find(y => y.MaNH === selectedYearId)?.name}` : ''}
         </button>
       </form>
-
-      {/* Class Management */}
-      <div className="bg-white p-6 rounded-xl shadow-sm mt-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-gray-900">Danh sách lớp trong trường</h2>
-          {!isAddingClass && (
-            <button
-              onClick={() => setIsAddingClass(true)}
-              className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
-            >
-              <Plus className="w-4 h-4" />
-              Thêm lớp
-            </button>
-          )}
-        </div>
-
-        {isAddingClass && (
-          <form onSubmit={handleSubmitClass} className="mb-4 p-4 bg-indigo-50 rounded-lg">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-gray-700 mb-2">Tên lớp</label>
-                <input
-                  type="text"
-                  required
-                  value={classFormData.name}
-                  onChange={(e) => setClassFormData({ ...classFormData, name: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="10A1"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-700 mb-2">Khối lớp</label>
-                <select
-                  value={classFormData.gradeLevel}
-                  onChange={(e) => setClassFormData({ ...classFormData, gradeLevel: parseInt(e.target.value) })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value={10}>Khối 10</option>
-                  <option value={11}>Khối 11</option>
-                  <option value={12}>Khối 12</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
-              >
-                <Save className="w-4 h-4" />
-                Lưu
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddingClass(false);
-                  setClassFormData({ name: '', gradeLevel: 10 });
-                }}
-                className="flex items-center gap-2 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400"
-              >
-                <X className="w-4 h-4" />
-                Hủy
-              </button>
-            </div>
-          </form>
-        )}
-
-        <p className="text-gray-600 mb-3">Tổng số lớp: {classes.length}</p>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          {classes.map((cls) => (
-            <div key={cls.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
-              <span className="text-gray-900">{cls.name}</span>
-              <button
-                onClick={() => handleDeleteClass(cls.id)}
-                className="text-red-600 hover:text-red-700"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Subject Management */}
-      <div className="bg-white p-6 rounded-xl shadow-sm mt-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-gray-900">Danh sách môn học</h2>
-          {!isAddingSubject && (
-            <button
-              onClick={() => setIsAddingSubject(true)}
-              className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
-            >
-              <Plus className="w-4 h-4" />
-              Thêm môn học
-            </button>
-          )}
-        </div>
-
-        {isAddingSubject && (
-          <form onSubmit={handleSubmitSubject} className="mb-4 p-4 bg-indigo-50 rounded-lg">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label className="block text-gray-700 mb-2">Tên môn học</label>
-                <input
-                  type="text"
-                  required
-                  value={subjectFormData.name}
-                  onChange={(e) => setSubjectFormData({ ...subjectFormData, name: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="Toán"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-700 mb-2">Mã môn học</label>
-                <input
-                  type="text"
-                  required
-                  value={subjectFormData.code}
-                  onChange={(e) => setSubjectFormData({ ...subjectFormData, code: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="TOAN"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-700 mb-2">Học kỳ</label>
-                <input
-                  type="text"
-                  required
-                  value={subjectFormData.hocKy}
-                  onChange={(e) => setSubjectFormData({ ...subjectFormData, hocKy: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="1"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-700 mb-2">Năm học</label>
-                <input
-                  type="text"
-                  required
-                  value={subjectFormData.namHoc}
-                  onChange={(e) => setSubjectFormData({ ...subjectFormData, namHoc: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="2024"
-                />
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
-              >
-                <Save className="w-4 h-4" />
-                Lưu
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddingSubject(false);
-                  setSubjectFormData({ name: '', code: '' , hocKy: '' , namHoc: '' });
-                }}
-                className="flex items-center gap-2 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400"
-              >
-                <X className="w-4 h-4" />
-                Hủy
-              </button>
-            </div>
-          </form>
-        )}
-
-        <p className="text-gray-600 mb-3">Tổng số môn học: {subjects.length}</p>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          {subjects.map((subject) => (
-            <div key={subject.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
-              <div>
-                <p className="text-gray-900">{subject.name}</p>
-                <p className="text-gray-600">{subject.code}</p>
-              </div>
-              <button
-                onClick={() => handleDeleteSubject(subject.id)}
-                className="text-red-600 hover:text-red-700"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

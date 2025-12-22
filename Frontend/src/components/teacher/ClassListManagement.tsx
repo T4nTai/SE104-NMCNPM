@@ -32,16 +32,19 @@ export function ClassListManagement() {
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [classSearchTerm, setClassSearchTerm] = useState('');
-  const [selectedGrade, setSelectedGrade] = useState<string>('all');
-  const [selectedYear, setSelectedYear] = useState('2024-2025');
-  const [selectedSemester, setSelectedSemester] = useState('HK1');
+  const [selectedGrade, setSelectedGrade] = useState<'all' | string>('all');
+  const [academicYears, setAcademicYears] = useState<Array<{ MaNH: number; Nam1: number; Nam2: number; name: string }>>([]);
+  const [selectedYearId, setSelectedYearId] = useState<number | null>(null);
+  const [semesters, setSemesters] = useState<Array<{ MaHK: number; TenHK: string }>>([]);
+  const [selectedSemester, setSelectedSemester] = useState<string>('');
+  const [grades, setGrades] = useState<Array<{ MaKL: number; TenKL: string }>>([]);
   const [formData, setFormData] = useState<{
     MaHocSinh: string;
     HoTen: string;
     GioiTinh: string;
     NgaySinh: string;
     Email: string;
-    SoDienThoai: string;
+    SDT: string;
     DiaChi: string;
   }>({
     MaHocSinh: '',
@@ -49,25 +52,83 @@ export function ClassListManagement() {
     GioiTinh: 'Nam',
     NgaySinh: '',
     Email: '',
-    SoDienThoai: '',
+    SDT: '',
     DiaChi: '',
   });
+  const [notify, setNotify] = useState<string | null>(null);
 
-  // Load classes on mount
+  // Load years, semesters, grades on mount
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    api
-      .getTeacherClasses()
-      .then((data) => setClasses(data))
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const [years, sems, grs] = await Promise.all([
+          api.listAcademicYears(),
+          api.listSemesters(),
+          api.listGrades(),
+        ]);
+
+        const mappedYears = (years || []).map((y: any) => ({ MaNH: y.MaNH, Nam1: y.Nam1, Nam2: y.Nam2, name: `${y.Nam1}-${y.Nam2}` }))
+          .sort((a: any, b: any) => b.Nam1 - a.Nam1);
+        setAcademicYears(mappedYears);
+        const defaultYearId = mappedYears[0]?.MaNH ?? null;
+        setSelectedYearId(defaultYearId);
+
+        setSemesters((sems || []).map((s: any) => ({ MaHK: s.MaHK, TenHK: s.TenHK })));
+        if (sems && sems.length > 0) setSelectedSemester(String(sems[0].MaHK));
+
+        setGrades((grs || []).map((g: any) => ({ MaKL: g.MaKL, TenKL: g.TenKL })));
+
+        const firstSemester = sems && sems.length > 0 ? String(sems[0].MaHK) : null;
+        if (firstSemester) setSelectedSemester(firstSemester);
+
+        // Load classes for default year
+        const classData = await api.getTeacherClasses(defaultYearId && firstSemester ? { MaNamHoc: String(defaultYearId), MaHocKy: firstSemester } : undefined);
+        setClasses(classData);
+      } catch (err: any) {
+        setError(err.message || 'Không thể tải dữ liệu ban đầu');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
   }, []);
 
-  const handleSelectClass = (classItem: ClassInfo) => {
+  // Reload classes when academic year changes
+  useEffect(() => {
+    const loadClasses = async () => {
+      try {
+        setLoading(true);
+        const classData = await api.getTeacherClasses(
+          selectedYearId ? { MaNamHoc: String(selectedYearId), MaHocKy: selectedSemester } : undefined
+        );
+        setClasses(classData);
+      } catch (err: any) {
+        setError(err.message || 'Không thể tải danh sách lớp');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadClasses();
+  }, [selectedYearId, selectedSemester]);
+
+  const handleSelectClass = async (classItem: ClassInfo) => {
     setSelectedClass(classItem);
     setIsAddingStudent(false);
     setEditingStudentId(null);
+    
+    // Fetch students for this class and selected semester
+    if (selectedSemester) {
+      try {
+        const students = await api.getStudentsByClass(classItem.MaLop, selectedSemester);
+        setSelectedClass({ ...classItem, DanhSachHocSinh: students });
+      } catch (err: any) {
+        console.error('Failed to load students:', err);
+        setNotify('Không thể tải danh sách học sinh');
+        setTimeout(() => setNotify(null), 3000);
+      }
+    }
   };
 
   const handleSubmitStudent = async (e: React.FormEvent) => {
@@ -99,27 +160,35 @@ export function ClassListManagement() {
           GioiTinh: formData.GioiTinh,
           NgaySinh: formData.NgaySinh,
           Email: formData.Email,
-          SoDienThoai: formData.SoDienThoai,
+          SDT: formData.SDT,
           DiaChi: formData.DiaChi,
         });
+        setNotify('Cập nhật học sinh thành công');
       } else {
-        // Add student to class/semester
-        await api.addStudentToClass(selectedClass.MaLop, '1', {
+        // Add student to class/semester - use selected semester ID from DB
+        const hocKyId = selectedSemester || '1';
+        const result = await api.addStudentToClass(selectedClass.MaLop, hocKyId, {
           MaHocSinh: formData.MaHocSinh,
           HoTen: formData.HoTen,
           GioiTinh: formData.GioiTinh,
           NgaySinh: formData.NgaySinh,
           Email: formData.Email,
-          SoDienThoai: formData.SoDienThoai,
+          SDT: formData.SDT,
           DiaChi: formData.DiaChi,
         });
+        if (result && (result as any).createdAccount) {
+          const ca = (result as any).createdAccount;
+          setNotify(`Thêm học sinh thành công. Đã tạo tài khoản ${ca.TenDangNhap} và gửi email tới ${ca.Email}.`);
+        } else {
+          setNotify('Thêm học sinh vào lớp thành công');
+        }
       }
 
-      // Reload classes
-      const updated = await api.getTeacherClasses();
-      setClasses(updated);
-      const cls = updated.find((c) => c.MaLop === selectedClass.MaLop);
-      if (cls) setSelectedClass(cls);
+      // Reload students for the current class
+      if (selectedSemester) {
+        const students = await api.getStudentsByClass(selectedClass.MaLop, selectedSemester);
+        setSelectedClass({ ...selectedClass, DanhSachHocSinh: students });
+      }
 
       setIsAddingStudent(false);
       setEditingStudentId(null);
@@ -129,9 +198,12 @@ export function ClassListManagement() {
         GioiTinh: 'Nam',
         NgaySinh: '',
         Email: '',
-        SoDienThoai: '',
+        SDT: '',
         DiaChi: '',
       });
+
+      // Auto-hide notification after 5s
+      setTimeout(() => setNotify(null), 5000);
     } catch (err) {
       alert('Lỗi: ' + (err instanceof Error ? err.message : 'Không thể thêm/cập nhật học sinh'));
     }
@@ -145,7 +217,7 @@ export function ClassListManagement() {
       GioiTinh: student.GioiTinh,
       NgaySinh: student.NgaySinh,
       Email: student.Email || '',
-      SoDienThoai: student.SoDienThoai || '',
+      SDT: student.SDT || '',
       DiaChi: student.DiaChi || '',
     });
     setIsAddingStudent(true);
@@ -158,11 +230,13 @@ export function ClassListManagement() {
     try {
       await api.deleteStudent(studentId);
 
-      // Reload classes
-      const updated = await api.getTeacherClasses();
-      setClasses(updated);
-      const cls = updated.find((c) => c.MaLop === selectedClass.MaLop);
-      if (cls) setSelectedClass(cls);
+      // Reload students for the current class
+      if (selectedSemester) {
+        const students = await api.getStudentsByClass(selectedClass.MaLop, selectedSemester);
+        setSelectedClass({ ...selectedClass, DanhSachHocSinh: students });
+      }
+      setNotify('Xóa học sinh thành công');
+      setTimeout(() => setNotify(null), 3000);
     } catch (err) {
       alert('Lỗi: ' + (err instanceof Error ? err.message : 'Không thể xóa học sinh'));
     }
@@ -176,7 +250,7 @@ export function ClassListManagement() {
   const filteredClasses = classes.filter(
     (c) =>
       c.TenLop.toLowerCase().includes(classSearchTerm.toLowerCase()) &&
-      (selectedGrade === 'all' || c.TenKhoiLop === selectedGrade)
+      (selectedGrade === 'all' || String(c.MaKhoiLop) === selectedGrade)
   );
 
   return (
@@ -185,6 +259,9 @@ export function ClassListManagement() {
 
       {loading && <div className="text-green-600 mb-4">Đang tải dữ liệu...</div>}
       {error && <div className="text-red-600 mb-4">Lỗi: {error}</div>}
+      {notify && (
+        <div className="mb-4 p-3 rounded-md bg-green-50 text-green-800 border border-green-200">{notify}</div>
+      )}
 
       {/* Search and Filter Section */}
       <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
@@ -196,13 +273,14 @@ export function ClassListManagement() {
           <div>
             <label className="block text-gray-700 mb-2">Năm học</label>
             <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
+              value={selectedYearId ?? ''}
+              onChange={(e) => setSelectedYearId(Number(e.target.value) || null)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
             >
-              <option value="2024-2025">2024-2025</option>
-              <option value="2023-2024">2023-2024</option>
-              <option value="2022-2023">2022-2023</option>
+              <option value="">-- Chọn năm học --</option>
+              {academicYears.map((y) => (
+                <option key={y.MaNH} value={y.MaNH}>{y.name}</option>
+              ))}
             </select>
           </div>
           <div>
@@ -212,8 +290,9 @@ export function ClassListManagement() {
               onChange={(e) => setSelectedSemester(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
             >
-              <option value="HK1">Học kỳ I</option>
-              <option value="HK2">Học kỳ II</option>
+              {semesters.map((s) => (
+                <option key={s.MaHK} value={String(s.MaHK)}>{s.TenHK}</option>
+              ))}
             </select>
           </div>
           <div>
@@ -239,9 +318,9 @@ export function ClassListManagement() {
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
               >
                 <option value="all">Tất cả khối</option>
-                <option value="Khối 10">Khối 10</option>
-                <option value="Khối 11">Khối 11</option>
-                <option value="Khối 12">Khối 12</option>
+                {grades.map((g) => (
+                  <option key={g.MaKL} value={String(g.MaKL)}>{g.TenKL}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -271,7 +350,7 @@ export function ClassListManagement() {
                     <Users className="w-4 h-4 text-green-600" />
                     <div>
                       <p className="text-gray-900">{classItem.TenLop}</p>
-                      <p className="text-gray-600">{classItem.MaKhoiLop} - {classItem.DanhSachHocSinh?.length ?? 0} học sinh</p>
+                      <p className="text-gray-600">Khối: {(classItem as any).TenKhoiLop || classItem.MaKhoiLop} • HS: {(classItem as any).SoLuongHocSinh ?? classItem.DanhSachHocSinh?.length ?? 0}</p>
                     </div>
                   </div>
                 </button>
@@ -349,8 +428,8 @@ export function ClassListManagement() {
                     <input
                       type="tel"
                       placeholder="Số điện thoại"
-                      value={formData.SoDienThoai}
-                      onChange={(e) => setFormData({ ...formData, SoDienThoai: e.target.value })}
+                      value={formData.SDT}
+                      onChange={(e) => setFormData({ ...formData, SDT: e.target.value })}
                       className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                       required
                     />

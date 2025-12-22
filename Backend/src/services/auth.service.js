@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import { JWT_SECRET, JWT_EXPIRES_IN } from "../configs/env.js";
 import  sequelize  from "../configs/sequelize.js";
 
-import { NguoiDung, NhomNguoiDung } from "../models/auth.model.js";
+import { NguoiDung, NhomNguoiDung, Quyen } from "../models/auth.model.js";
 import { HocSinh } from "../models/student.model.js";
 
 export class AuthService {
@@ -20,9 +20,6 @@ export class AuthService {
     if (!ok) throw { status: 401, message: "Sai tài khoản hoặc mật khẩu" };
 
     const role = String(user.nhom?.TenNhomNguoiDung || "").toLowerCase();
-    if (role === "student" && !user.MaHocSinh) {
-      throw { status: 403, message: "Tài khoản học sinh chưa liên kết MaHocSinh" };
-    }
 
     const token = jwt.sign(
       {
@@ -47,6 +44,38 @@ export class AuthService {
         MaNhomNguoiDung: user.MaNhomNguoiDung,
         MaHocSinh: user.MaHocSinh || null, 
       },
+    };
+  }
+
+  static async registerRequest({ TenDangNhap, MatKhau, HoVaTen = null, Email = null }) {
+    if (!TenDangNhap || !MatKhau) throw { status: 400, message: "Thiếu TenDangNhap hoặc MatKhau" };
+
+    const existedUsername = await NguoiDung.findOne({ where: { TenDangNhap } });
+    if (existedUsername) throw { status: 400, message: "TenDangNhap đã tồn tại" };
+
+    // Default new registrations to the 'student' group
+    let studentGroup = await NhomNguoiDung.findOne({ where: { TenNhomNguoiDung: "student" } });
+    if (!studentGroup) {
+      // fallback: create student group using first available Quyen
+      const firstQuyen = await Quyen.findOne();
+      studentGroup = await NhomNguoiDung.create({ TenNhomNguoiDung: "student", MaQuyen: firstQuyen ? firstQuyen.MaQuyen : 1 });
+    }
+
+    const hashed = await bcrypt.hash(MatKhau, 10);
+    const user = await NguoiDung.create({
+      TenDangNhap,
+      MatKhau: hashed,
+      HoVaTen,
+      Email,
+      MaNhomNguoiDung: studentGroup.MaNhomNguoiDung,
+      MaHocSinh: null,
+    });
+
+    return {
+      MaNguoiDung: user.MaNguoiDung,
+      TenDangNhap: user.TenDangNhap,
+      role: 'student',
+      message: 'Tài khoản đã được tạo với vai trò học sinh. Vui lòng cập nhật thông tin học sinh nếu cần.'
     };
   }
 
@@ -78,8 +107,9 @@ export class AuthService {
   }) {
     if (!TenDangNhap || !MatKhau) throw { status: 400, message: "Thiếu TenDangNhap hoặc MatKhau" };
     if (!MaHocSinh) throw { status: 400, message: "MaHocSinh is required" };
-    if (!HoTen || !GioiTinh || !NgaySinh) throw { status: 400, message: "Thiếu HoTen/GioiTinh/NgaySinh" };
-
+    if (!HoTen || GioiTinh === undefined || GioiTinh === null || !NgaySinh)
+    throw { status: 400, message: "Thiếu HoTen/GioiTinh/NgaySinh" };
+  
     const existedUsername = await NguoiDung.findOne({ where: { TenDangNhap } });
     if (existedUsername) throw { status: 400, message: "TenDangNhap đã tồn tại" };
 

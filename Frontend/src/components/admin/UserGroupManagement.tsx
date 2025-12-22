@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { api } from '../../api/client';
 import { Plus, Edit2, Trash2, Save, X } from 'lucide-react';
 
 interface Permission {
@@ -18,18 +19,6 @@ interface UserGroup {
   permission?: Permission;
 }
 
-const MOCK_PERMISSIONS: Permission[] = [
-  { maQuyen: 1, phanQuyenHeThong: 1, thayDoiThamSo: 1, thayDoiQuyDinh: 1, dieuChinhNghiepVu: 1, traCuuDiemVaLopHoc: 1, traCuuHocSinh: 1 },
-  { maQuyen: 2, phanQuyenHeThong: 0, thayDoiThamSo: 0, thayDoiQuyDinh: 0, dieuChinhNghiepVu: 1, traCuuDiemVaLopHoc: 1, traCuuHocSinh: 1 },
-  { maQuyen: 3, phanQuyenHeThong: 0, thayDoiThamSo: 0, thayDoiQuyDinh: 0, dieuChinhNghiepVu: 0, traCuuDiemVaLopHoc: 1, traCuuHocSinh: 0 },
-];
-
-const MOCK_USER_GROUPS: UserGroup[] = [
-  { maNhomNguoiDung: 1, tenNhomNguoiDung: 'Admin', maQuyen: 1 },
-  { maNhomNguoiDung: 2, tenNhomNguoiDung: 'Giáo viên', maQuyen: 2 },
-  { maNhomNguoiDung: 3, tenNhomNguoiDung: 'Học sinh', maQuyen: 3 },
-];
-
 export function UserGroupManagement() {
   const [userGroups, setUserGroups] = useState<UserGroup[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
@@ -42,69 +31,92 @@ export function UserGroupManagement() {
 
   // Simulate API call to fetch data
   useEffect(() => {
-    fetchUserGroups();
     fetchPermissions();
   }, []);
 
-  const fetchUserGroups = async () => {
-    // TODO: Replace with actual API call
-    // const response = await fetch('/api/user-groups');
-    // const data = await response.json();
-    // setUserGroups(data);
-    const groupsWithPermissions = MOCK_USER_GROUPS.map(group => ({
-      ...group,
-      permission: MOCK_PERMISSIONS.find(p => p.maQuyen === group.maQuyen)
-    }));
-    setUserGroups(groupsWithPermissions);
+  const fetchUserGroups = async (perms: Permission[]) => {
+    try {
+      const data = await api.listNhomNguoiDung();
+      const groups = (data || []).map((g: any) => ({
+        maNhomNguoiDung: g.MaNhomNguoiDung || g.maNhomNguoiDung,
+        tenNhomNguoiDung: g.TenNhomNguoiDung || g.tenNhomNguoiDung,
+        maQuyen: g.MaQuyen || g.maQuyen,
+        permission: undefined,
+      }));
+      const groupsWithPermissions = groups.map((gr: any) => ({
+        ...gr,
+        permission: perms.find((p) => p.maQuyen === gr.maQuyen),
+      }));
+      setUserGroups(groupsWithPermissions);
+    } catch (err) {
+      console.error('Failed to load user groups', err);
+      setUserGroups([]);
+    }
   };
 
   const fetchPermissions = async () => {
-    // TODO: Replace with actual API call
-    // const response = await fetch('/api/permissions');
-    // const data = await response.json();
-    // setPermissions(data);
-    setPermissions(MOCK_PERMISSIONS);
+    try {
+      const data = await api.listQuyen();
+      const mapped = (data || []).map((q: any) => ({
+        maQuyen: q.MaQuyen || q.maQuyen,
+        phanQuyenHeThong: q.PhanQuyenHeThong ?? q.phanQuyenHeThong ?? 0,
+        thayDoiThamSo: q.ThayDoiThamSo ?? q.thayDoiThamSo ?? 0,
+        thayDoiQuyDinh: q.ThayDoiQuyDinh ?? q.thayDoiQuyDinh ?? 0,
+        dieuChinhNghiepVu: q.DieuChinhNghiepVu ?? q.dieuChinhNghiepVu ?? 0,
+        traCuuDiemVaLopHoc: q.TraCuuDiemVaLopHoc ?? q.traCuuDiemVaLopHoc ?? 0,
+        traCuuHocSinh: q.TraCuuHocSinh ?? q.traCuuHocSinh ?? 0,
+      }));
+      setPermissions(mapped);
+      // after permissions loaded, fetch groups and attach permissions
+      await fetchUserGroups(mapped);
+    } catch (err) {
+      console.error('Failed to load permissions', err);
+      setPermissions([]);
+      setUserGroups([]);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (editingId) {
-      // TODO: Replace with actual API call
-      // await fetch(`/api/user-groups/${editingId}`, {
-      //   method: 'PUT',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(formData)
-      // });
-      
-      setUserGroups(userGroups.map(g => 
-        g.maNhomNguoiDung === editingId 
-          ? { 
-              ...formData, 
-              maNhomNguoiDung: editingId,
-              permission: permissions.find(p => p.maQuyen === formData.maQuyen)
-            } 
-          : g
-      ));
-      setEditingId(null);
+      try {
+        await api.updateNhomNguoiDung(editingId, {
+          TenNhomNguoiDung: formData.tenNhomNguoiDung,
+          MaQuyen: formData.maQuyen,
+        });
+        setUserGroups(userGroups.map(g => 
+          g.maNhomNguoiDung === editingId 
+            ? { 
+                ...g,
+                tenNhomNguoiDung: formData.tenNhomNguoiDung,
+                maQuyen: formData.maQuyen,
+                permission: permissions.find(p => p.maQuyen === formData.maQuyen),
+              } 
+            : g
+        ));
+        setEditingId(null);
+      } catch (err) {
+        console.error('Failed to update group', err);
+      }
     } else {
-      // TODO: Replace with actual API call
-      // const response = await fetch('/api/user-groups', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(formData)
-      // });
-      // const newGroup = await response.json();
-      
-      const newGroup: UserGroup = { 
-        ...formData, 
-        maNhomNguoiDung: Date.now(),
-        permission: permissions.find(p => p.maQuyen === formData.maQuyen)
-      };
-      setUserGroups([...userGroups, newGroup]);
-      setIsAdding(false);
+      try {
+        const created = await api.createNhomNguoiDung({
+          TenNhomNguoiDung: formData.tenNhomNguoiDung,
+          MaQuyen: formData.maQuyen,
+        });
+        const newGroup: UserGroup = {
+          maNhomNguoiDung: created.MaNhomNguoiDung || created.MaNhomNguoiDung,
+          tenNhomNguoiDung: created.TenNhomNguoiDung || created.TenNhomNguoiDung,
+          maQuyen: created.MaQuyen || created.MaQuyen,
+          permission: permissions.find(p => p.maQuyen === (created.MaQuyen || created.MaQuyen)),
+        };
+        setUserGroups([...userGroups, newGroup]);
+        setIsAdding(false);
+      } catch (err) {
+        console.error('Failed to create group', err);
+      }
     }
-    
+
     resetForm();
   };
 
@@ -119,11 +131,12 @@ export function UserGroupManagement() {
 
   const handleDelete = async (id: number) => {
     if (!confirm('Bạn có chắc chắn muốn xóa nhóm người dùng này?')) return;
-    
-    // TODO: Replace with actual API call
-    // await fetch(`/api/user-groups/${id}`, { method: 'DELETE' });
-    
-    setUserGroups(userGroups.filter(g => g.maNhomNguoiDung !== id));
+    try {
+      await api.deleteNhomNguoiDung(id);
+      setUserGroups(userGroups.filter(g => g.maNhomNguoiDung !== id));
+    } catch (err) {
+      console.error('Failed to delete group', err);
+    }
   };
 
   const resetForm = () => {

@@ -15,7 +15,10 @@ CREATE TABLE NAMHOC (
 
 CREATE TABLE HOCKY (
     MaHK INT PRIMARY KEY AUTO_INCREMENT,
-    TenHK VARCHAR(50) NOT NULL
+    TenHK VARCHAR(50) NOT NULL,
+    MaNamHoc INT NULL,
+    NgayBatDau DATE NULL,
+    NgayKetThuc DATE NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE LOAIHINHKIEMTRA (
@@ -45,7 +48,7 @@ CREATE TABLE HOCSINH (
     MaHocSinh VARCHAR(100) PRIMARY KEY,
     HoTen VARCHAR(100) NOT NULL,
     NgaySinh DATE NOT NULL,
-    GioiTinh CHAR(1) NOT NULL,
+    GioiTinh VARCHAR(10) NOT NULL,
     Email VARCHAR(100) NULL,
     SDT VARCHAR(20) NULL,
     DiaChi VARCHAR(255),
@@ -233,3 +236,10 @@ VALUES
 ('admin', 1),
 ('teacher', 2),
 ('student', 3);
+
+INSERT INTO LOAIHINHKIEMTRA (TenLHKT, HeSo)
+VALUES
+  ('Miệng/15''', 1),
+  ('1 tiết', 2),
+  ('Giữa kì', 3),
+  ('Cuối kì', 3);

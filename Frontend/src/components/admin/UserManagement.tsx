@@ -1,146 +1,221 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Save, X, Search } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Search, RefreshCw, Key } from 'lucide-react';
+import { api } from '../../api/client';
+import type { NguoiDung, NhomNguoiDung, CreateNguoiDungPayload } from '../../api/types';
 
-interface User {
-  maNguoiDung: number;
-  tenDangNhap: string;
-  matKhau: string;
-  hoVaTen: string;
-  email: string;
-  maNhomNguoiDung: number;
-  tenNhomNguoiDung?: string;
+interface FormData extends Omit<CreateNguoiDungPayload, 'sendEmail'> {
+  sendEmail: boolean;
 }
-
-interface UserGroup {
-  maNhomNguoiDung: number;
-  tenNhomNguoiDung: string;
-}
-
-const MOCK_USER_GROUPS: UserGroup[] = [
-];
-
-const MOCK_USERS: User[] = [
-];
 
 export function UserManagement() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [userGroups, setUserGroups] = useState<UserGroup[]>([]);
+  const [users, setUsers] = useState<NguoiDung[]>([]);
+  const [userGroups, setUserGroups] = useState<NhomNguoiDung[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<number | 'all'>('all');
-  const [formData, setFormData] = useState<Omit<User, 'maNguoiDung' | 'tenNhomNguoiDung'>>({
-    tenDangNhap: '',
-    matKhau: '',
-    hoVaTen: '',
-    email: '',
-    maNhomNguoiDung: 1
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [formData, setFormData] = useState<FormData>({
+    TenDangNhap: '',
+    MatKhau: '',
+    HoVaTen: '',
+    Email: '',
+    MaNhomNguoiDung: 1,
+    sendEmail: true,
   });
 
-  // Simulate API call to fetch users
   useEffect(() => {
     fetchUsers();
     fetchUserGroups();
   }, []);
 
   const fetchUsers = async () => {
-    // TODO: Replace with actual API call
-    // const response = await fetch('/api/users');
-    // const data = await response.json();
-    // setUsers(data);
-    setUsers(MOCK_USERS);
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await api.listNguoiDung();
+      setUsers(data);
+    } catch (err: any) {
+      console.error('Error fetching users:', err);
+      setError(err.response?.data?.message || 'Không thể tải danh sách người dùng');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const fetchUserGroups = async () => {
-    // TODO: Replace with actual API call
-    // const response = await fetch('/api/user-groups');
-    // const data = await response.json();
-    // setUserGroups(data);
-    setUserGroups(MOCK_USER_GROUPS);
+    try {
+      const data = await api.listNhomNguoiDung();
+      setUserGroups(data);
+      if (data.length > 0 && !formData.MaNhomNguoiDung) {
+        setFormData(prev => ({ ...prev, MaNhomNguoiDung: data[0].MaNhomNguoiDung }));
+      }
+    } catch (err: any) {
+      console.error('Error fetching user groups:', err);
+      setError(err.response?.data?.message || 'Không thể tải danh sách nhóm người dùng');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (editingId) {
-      // TODO: Replace with actual API call
-      // await fetch(`/api/users/${editingId}`, {
-      //   method: 'PUT',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(formData)
-      // });
-      
-      setUsers(users.map(u => 
-        u.maNguoiDung === editingId 
-          ? { ...formData, maNguoiDung: editingId, tenNhomNguoiDung: userGroups.find(g => g.maNhomNguoiDung === formData.maNhomNguoiDung)?.tenNhomNguoiDung } 
-          : u
-      ));
-      setEditingId(null);
-    } else {
-      // TODO: Replace with actual API call
-      // const response = await fetch('/api/users', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(formData)
-      // });
-      // const newUser = await response.json();
-      
-      const newUser: User = { 
-        ...formData, 
-        maNguoiDung: Date.now(),
-        tenNhomNguoiDung: userGroups.find(g => g.maNhomNguoiDung === formData.maNhomNguoiDung)?.tenNhomNguoiDung
-      };
-      setUsers([...users, newUser]);
-      setIsAdding(false);
+    setLoading(true);
+    setError(null);
+
+    try {
+      if (editingId) {
+        // Update user
+        const payload: any = {
+          TenDangNhap: formData.TenDangNhap,
+          HoVaTen: formData.HoVaTen,
+          Email: formData.Email,
+          MaNhomNguoiDung: formData.MaNhomNguoiDung,
+        };
+        
+        // Only include password if it's changed
+        if (formData.MatKhau) {
+          payload.MatKhau = formData.MatKhau;
+        }
+
+        await api.updateNguoiDung(editingId, payload);
+        alert('Cập nhật người dùng thành công!');
+      } else {
+        // Create new user
+        const payload: CreateNguoiDungPayload = {
+          TenDangNhap: formData.TenDangNhap,
+          MatKhau: formData.MatKhau,
+          HoVaTen: formData.HoVaTen,
+          Email: formData.Email,
+          MaNhomNguoiDung: formData.MaNhomNguoiDung,
+          sendEmail: formData.sendEmail,
+        };
+
+        await api.createNguoiDung(payload);
+        alert(
+          formData.sendEmail && formData.Email
+            ? 'Tạo người dùng thành công! Thông tin đăng nhập đã được gửi qua email.'
+            : 'Tạo người dùng thành công!'
+        );
+      }
+
+      await fetchUsers();
+      resetForm();
+    } catch (err: any) {
+      console.error('Error saving user:', err);
+      setError(err.response?.data?.message || 'Có lỗi xảy ra khi lưu người dùng');
+    } finally {
+      setLoading(false);
     }
-    
-    resetForm();
   };
 
-  const handleEdit = (user: User) => {
-    setEditingId(user.maNguoiDung);
+  const handleEdit = async (user: NguoiDung) => {
+    // If the user's group isn't currently in the filtered list, fetch full groups so the role select shows it
+    const hasGroup = userGroups.some(g => g.MaNhomNguoiDung === user.MaNhomNguoiDung);
+    if (!hasGroup) {
+      try {
+        const allGroups = await api.listNhomNguoiDung();
+        setUserGroups(allGroups);
+      } catch (err: any) {
+        console.error('Error fetching full user groups:', err);
+      }
+    }
+
+    setEditingId(user.MaNguoiDung);
     setFormData({
-      tenDangNhap: user.tenDangNhap,
-      matKhau: user.matKhau,
-      hoVaTen: user.hoVaTen,
-      email: user.email,
-      maNhomNguoiDung: user.maNhomNguoiDung
+      TenDangNhap: user.TenDangNhap,
+      MatKhau: '', // Don't populate password for security
+      HoVaTen: user.HoVaTen || '',
+      Email: user.Email || '',
+      MaNhomNguoiDung: user.MaNhomNguoiDung,
+      sendEmail: false,
     });
     setIsAdding(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Bạn có chắc chắn muốn xóa người dùng này?')) return;
-    
-    // TODO: Replace with actual API call
-    // await fetch(`/api/users/${id}`, { method: 'DELETE' });
-    
-    setUsers(users.filter(u => u.maNguoiDung !== id));
+  const handleDelete = async (id: number, username: string) => {
+    if (!confirm(`Bạn có chắc chắn muốn xóa người dùng "${username}"?`)) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      await api.deleteNguoiDung(id);
+      alert('Xóa người dùng thành công!');
+      await fetchUsers();
+    } catch (err: any) {
+      console.error('Error deleting user:', err);
+      setError(err.response?.data?.message || 'Không thể xóa người dùng');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (id: number, username: string) => {
+    const newPassword = prompt(`Nhập mật khẩu mới cho "${username}":`);
+    if (!newPassword) return;
+
+    if (newPassword.length < 6) {
+      alert('Mật khẩu phải có ít nhất 6 ký tự!');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      await api.resetMatKhau(id, newPassword);
+      alert('Đặt lại mật khẩu thành công!');
+    } catch (err: any) {
+      console.error('Error resetting password:', err);
+      setError(err.response?.data?.message || 'Không thể đặt lại mật khẩu');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const resetForm = () => {
     setFormData({
-      tenDangNhap: '',
-      matKhau: '',
-      hoVaTen: '',
-      email: '',
-      maNhomNguoiDung: 1
+      TenDangNhap: '',
+      MatKhau: '',
+      HoVaTen: '',
+      Email: '',
+      MaNhomNguoiDung: userGroups[0]?.MaNhomNguoiDung || 1,
+      sendEmail: true,
     });
     setIsAdding(false);
     setEditingId(null);
+    setError(null);
   };
 
-  const filteredUsers = users.filter(u => {
-    const matchSearch = u.hoVaTen.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                       u.tenDangNhap.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                       u.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchGroup = selectedGroup === 'all' || u.maNhomNguoiDung === selectedGroup;
+  const filteredUsers = users.filter((u) => {
+    const matchSearch =
+      (u.HoVaTen?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
+      u.TenDangNhap.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (u.Email?.toLowerCase().includes(searchTerm.toLowerCase()) || false);
+    const matchGroup = selectedGroup === 'all' || u.MaNhomNguoiDung === selectedGroup;
     return matchSearch && matchGroup;
   });
 
   return (
     <div>
-      <h1 className="text-blue-900 mb-6">Quản lý người dùng</h1>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-blue-900">Quản lý người dùng</h1>
+        <button
+          onClick={fetchUsers}
+          disabled={loading}
+          className="flex items-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+        >
+          <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+          Làm mới
+        </button>
+      </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+          {error}
+        </div>
+      )}
 
       {/* Search and Filter */}
       <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
@@ -164,9 +239,9 @@ export function UserManagement() {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="all">Tất cả nhóm</option>
-              {userGroups.map(group => (
-                <option key={group.maNhomNguoiDung} value={group.maNhomNguoiDung}>
-                  {group.tenNhomNguoiDung}
+              {userGroups.map((group) => (
+                <option key={group.MaNhomNguoiDung} value={group.MaNhomNguoiDung}>
+                  {group.TenNhomNguoiDung}
                 </option>
               ))}
             </select>
@@ -179,7 +254,8 @@ export function UserManagement() {
         {!isAdding && (
           <button
             onClick={() => setIsAdding(true)}
-            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            disabled={loading}
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
             <Plus className="w-5 h-5" />
             Thêm người dùng
@@ -190,82 +266,117 @@ export function UserManagement() {
       {/* Add/Edit Form */}
       {isAdding && (
         <div className="bg-white p-6 rounded-xl shadow-sm mb-6">
-          <h2 className="text-blue-900 mb-4">
+          <h2 className="text-xl font-semibold text-blue-900 mb-4">
             {editingId ? 'Chỉnh sửa người dùng' : 'Thêm người dùng mới'}
           </h2>
           <form onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
-                <label className="block text-gray-700 mb-2">Tên đăng nhập *</label>
+                <label className="block text-gray-700 mb-2 font-medium">
+                  Tên đăng nhập <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
                   required
-                  value={formData.tenDangNhap}
-                  onChange={(e) => setFormData({ ...formData, tenDangNhap: e.target.value })}
+                  value={formData.TenDangNhap}
+                  onChange={(e) => setFormData({ ...formData, TenDangNhap: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="admin"
+                  placeholder="giaovien01"
+                  disabled={loading}
                 />
               </div>
               <div>
-                <label className="block text-gray-700 mb-2">Mật khẩu *</label>
+                <label className="block text-gray-700 mb-2 font-medium">
+                  Mật khẩu {editingId ? '(để trống nếu không đổi)' : <span className="text-red-500">*</span>}
+                </label>
                 <input
                   type="password"
-                  required
-                  value={formData.matKhau}
-                  onChange={(e) => setFormData({ ...formData, matKhau: e.target.value })}
+                  required={!editingId}
+                  value={formData.MatKhau}
+                  onChange={(e) => setFormData({ ...formData, MatKhau: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="••••••••"
+                  disabled={loading}
+                  minLength={6}
                 />
               </div>
               <div>
-                <label className="block text-gray-700 mb-2">Họ và tên *</label>
+                <label className="block text-gray-700 mb-2 font-medium">
+                  Họ và tên <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
                   required
-                  value={formData.hoVaTen}
-                  onChange={(e) => setFormData({ ...formData, hoVaTen: e.target.value })}
+                  value={formData.HoVaTen}
+                  onChange={(e) => setFormData({ ...formData, HoVaTen: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Nguyễn Văn A"
+                  disabled={loading}
                 />
               </div>
               <div>
-                <label className="block text-gray-700 mb-2">Email *</label>
+                <label className="block text-gray-700 mb-2 font-medium">
+                  Email <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="email"
                   required
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  value={formData.Email}
+                  onChange={(e) => setFormData({ ...formData, Email: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="user@school.com"
+                  disabled={loading}
                 />
               </div>
-              <div>
-                <label className="block text-gray-700 mb-2">Nhóm người dùng *</label>
+              <div className="md:col-span-2">
+                <label className="block text-gray-700 mb-2 font-medium">
+                  Nhóm người dùng <span className="text-red-500">*</span>
+                </label>
                 <select
-                  value={formData.maNhomNguoiDung}
-                  onChange={(e) => setFormData({ ...formData, maNhomNguoiDung: parseInt(e.target.value) })}
+                  value={formData.MaNhomNguoiDung}
+                  onChange={(e) => setFormData({ ...formData, MaNhomNguoiDung: parseInt(e.target.value) })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={loading}
                 >
-                  {userGroups.map(group => (
-                    <option key={group.maNhomNguoiDung} value={group.maNhomNguoiDung}>
-                      {group.tenNhomNguoiDung}
+                  {userGroups.map((group) => (
+                    <option key={group.MaNhomNguoiDung} value={group.MaNhomNguoiDung}>
+                      {group.TenNhomNguoiDung}
                     </option>
                   ))}
                 </select>
               </div>
             </div>
+
+            {/* Send Email Checkbox (only for new users) */}
+            {!editingId && (
+              <div className="mb-4">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.sendEmail}
+                    onChange={(e) => setFormData({ ...formData, sendEmail: e.target.checked })}
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                    disabled={loading}
+                  />
+                  <span className="text-gray-700">Gửi thông tin đăng nhập qua email</span>
+                </label>
+              </div>
+            )}
+
             <div className="flex gap-2">
               <button
                 type="submit"
-                className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+                disabled={loading}
+                className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
                 <Save className="w-5 h-5" />
-                {editingId ? 'Cập nhật' : 'Lưu'}
+                {loading ? 'Đang lưu...' : editingId ? 'Cập nhật' : 'Lưu'}
               </button>
               <button
                 type="button"
                 onClick={resetForm}
-                className="flex items-center gap-2 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400"
+                disabled={loading}
+                className="flex items-center gap-2 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 disabled:opacity-50"
               >
                 <X className="w-5 h-5" />
                 Hủy
@@ -277,59 +388,113 @@ export function UserManagement() {
 
       {/* Users Table */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-gray-700">Mã ND</th>
-              <th className="px-6 py-3 text-left text-gray-700">Tên đăng nhập</th>
-              <th className="px-6 py-3 text-left text-gray-700">Họ và tên</th>
-              <th className="px-6 py-3 text-left text-gray-700">Email</th>
-              <th className="px-6 py-3 text-left text-gray-700">Nhóm</th>
-              <th className="px-6 py-3 text-left text-gray-700">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {filteredUsers.map((user) => (
-              <tr key={user.maNguoiDung} className="hover:bg-gray-50">
-                <td className="px-6 py-4 text-gray-900">{user.maNguoiDung}</td>
-                <td className="px-6 py-4 text-gray-900">{user.tenDangNhap}</td>
-                <td className="px-6 py-4 text-gray-900">{user.hoVaTen}</td>
-                <td className="px-6 py-4 text-gray-600">{user.email}</td>
-                <td className="px-6 py-4">
-                  <span className={`px-3 py-1 rounded-full text-sm ${
-                    user.maNhomNguoiDung === 1 ? 'bg-indigo-100 text-indigo-700' :
-                    user.maNhomNguoiDung === 2 ? 'bg-green-100 text-green-700' :
-                    'bg-blue-100 text-blue-700'
-                  }`}>
-                    {user.tenNhomNguoiDung}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleEdit(user)}
-                      className="text-blue-600 hover:text-blue-700"
-                    >
-                      <Edit2 className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(user.maNguoiDung)}
-                      className="text-red-600 hover:text-red-700"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  </div>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Mã
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Tên đăng nhập
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Họ và tên
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Email
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Nhóm
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Thao tác
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-        {filteredUsers.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
-            Không tìm thấy người dùng nào
-          </div>
-        )}
+            </thead>
+            <tbody className="divide-y divide-gray-200 bg-white">
+              {loading && users.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                    Đang tải dữ liệu...
+                  </td>
+                </tr>
+              ) : filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                    Không tìm thấy người dùng nào
+                  </td>
+                </tr>
+              ) : (
+                filteredUsers.map((user) => (
+                  <tr key={user.MaNguoiDung} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {user.MaNguoiDung}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {user.TenDangNhap}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {user.HoVaTen || '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {user.Email || '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-medium ${
+                          user.nhom?.TenNhomNguoiDung?.toLowerCase().includes('admin')
+                            ? 'bg-purple-100 text-purple-700'
+                            : user.nhom?.TenNhomNguoiDung?.toLowerCase().includes('giáo viên')
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-green-100 text-green-700'
+                        }`}
+                      >
+                        {user.nhom?.TenNhomNguoiDung || '-'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEdit(user)}
+                          disabled={loading}
+                          className="text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                          title="Chỉnh sửa"
+                        >
+                          <Edit2 className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => handleResetPassword(user.MaNguoiDung, user.TenDangNhap)}
+                          disabled={loading}
+                          className="text-orange-600 hover:text-orange-700 disabled:opacity-50"
+                          title="Đặt lại mật khẩu"
+                        >
+                          <Key className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(user.MaNguoiDung, user.TenDangNhap)}
+                          disabled={loading}
+                          className="text-red-600 hover:text-red-700 disabled:opacity-50"
+                          title="Xóa"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {/* Summary */}
+      {!loading && users.length > 0 && (
+        <div className="mt-4 text-sm text-gray-600">
+          Hiển thị {filteredUsers.length} / {users.length} người dùng
+        </div>
+      )}
     </div>
   );
 }

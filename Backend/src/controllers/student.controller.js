@@ -4,7 +4,10 @@ export class StudentController {
   static async meClasses(req, res, next) {
     try {
       const MaHocSinh = req.user?.MaHocSinh;
-      if (!MaHocSinh) throw { status: 403, message: "Tài khoản không liên kết học sinh" };
+      if (!MaHocSinh) {
+        // If account not linked to a student record, return empty list instead of 403
+        return res.json({ data: [] });
+      }
 
       const data = await StudentService.getMyClasses({
         MaHocSinh,
@@ -17,7 +20,9 @@ export class StudentController {
   static async meScores(req, res, next) {
     try {
       const MaHocSinh = req.user?.MaHocSinh;
-      if (!MaHocSinh) throw { status: 403, message: "Tài khoản không liên kết học sinh" };
+      if (!MaHocSinh) {
+        return res.json({ data: [] });
+      }
 
       const { MaHocKy } = req.query;
       if (!MaHocKy) throw { status: 400, message: "MaHocKy is required" };

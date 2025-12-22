@@ -30,4 +30,10 @@ export class AuthController {
      next(e);
     }
     }
+  static async registerRequest(req, res, next) {
+    try {
+      const data = await AuthService.registerRequest(req.body);
+      res.status(201).json({ data });
+    } catch (e) { next(e); }
+  }
 }

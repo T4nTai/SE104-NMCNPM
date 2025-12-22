@@ -10,10 +10,10 @@ interface RegisterScreenProps {
 export function RegisterScreen({ onRegister, onNavigateToLogin }: RegisterScreenProps) {
   const [formData, setFormData] = useState({
     name: '',
+    username: '',
     email: '',
     password: '',
     confirmPassword: '',
-    role: 'student'
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -36,23 +36,18 @@ export function RegisterScreen({ onRegister, onNavigateToLogin }: RegisterScreen
     setLoading(true);
 
     try {
-      // Call API register endpoint
-      const response = await api.register({
-        TenNguoiDung: formData.name,
-        Email: formData.email,
+      // Create a pending registration (admin will approve role)
+      const payload = {
+        TenDangNhap: formData.username,
         MatKhau: formData.password,
-        VaiTro: formData.role
-      });
+        HoVaTen: formData.name,
+        Email: formData.email,
+      };
 
-      // Optionally auto-login after registration
-      if (response.token) {
-        setAuthToken(response.token);
-      }
+      await api.registerRequest(payload);
 
       setSuccess(true);
-      setTimeout(() => {
-        onRegister();
-      }, 1500);
+      // Do not auto-login — user must wait for admin approval
     } catch (err: any) {
       setError(err.message || 'Đăng ký thất bại. Vui lòng thử lại.');
       console.error('Register error:', err);
@@ -75,7 +70,7 @@ export function RegisterScreen({ onRegister, onNavigateToLogin }: RegisterScreen
 
         {success ? (
           <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-center">
-            Đăng ký thành công! Đang chuyển đến trang đăng nhập...
+            Đăng ký thành công! Tài khoản đã được tạo với vai trò học sinh.
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -92,6 +87,22 @@ export function RegisterScreen({ onRegister, onNavigateToLogin }: RegisterScreen
             </div>
 
             <div>
+              <p className="text-sm text-gray-500">Tài khoản sẽ được tạo với vai trò học sinh. Nếu bạn cần được gán vai trò khác, liên hệ quản trị.</p>
+            </div>
+
+            <div>
+              <label className="block text-gray-700 mb-2">Tên đăng nhập</label>
+              <input
+                type="text"
+                value={formData.username}
+                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="Nhập tên đăng nhập"
+                required
+              />
+            </div>
+
+            <div>
               <label className="block text-gray-700 mb-2">Email</label>
               <input
                 type="email"
@@ -101,19 +112,6 @@ export function RegisterScreen({ onRegister, onNavigateToLogin }: RegisterScreen
                 placeholder="Nhập email"
                 required
               />
-            </div>
-
-            <div>
-              <label className="block text-gray-700 mb-2">Vai trò</label>
-              <select
-                value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="student">Học sinh</option>
-                <option value="teacher">Giáo viên</option>
-                <option value="admin">Quản lý</option>
-              </select>
             </div>
 
             <div>

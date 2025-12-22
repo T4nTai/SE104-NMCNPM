@@ -7,6 +7,9 @@ export function RegulationManagement() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  // Academic year states
+  const [academicYears, setAcademicYears] = useState<any[]>([]);
+
   // Semester states
   const [semesters, setSemesters] = useState<any[]>([]);
   const [isAddingSemester, setIsAddingSemester] = useState(false);
@@ -21,6 +24,7 @@ export function RegulationManagement() {
   const [editingSubjectId, setEditingSubjectId] = useState<number | null>(null);
   const [subjectFormData, setSubjectFormData] = useState({
     TenMonHoc: '',
+    MaMon: '',
     HeSoMon: 1,
     MoTa: ''
   });
@@ -34,12 +38,50 @@ export function RegulationManagement() {
     SoLop: 0,
   });
 
+  // Class states
+  const [classes, setClasses] = useState<any[]>([]);
+  const [isAddingClass, setIsAddingClass] = useState(false);
+  const [classFormData, setClassFormData] = useState({
+    TenLop: '',
+    MaKhoiLop: '',
+    MaNamHoc: '',
+    SiSo: 0,
+  });
+
   useEffect(() => {
     loadAllData();
   }, []);
 
   const loadAllData = async () => {
-    await Promise.all([loadSemesters(), loadSubjects(), loadGrades()]);
+    await Promise.all([loadAcademicYears(), loadSemesters(), loadSubjects(), loadGrades(), loadClasses()]);
+  };
+
+  const loadAcademicYears = async () => {
+    try {
+      const data = await api.listAcademicYears();
+      setAcademicYears(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      console.error('Failed to load academic years:', err);
+    }
+  };
+
+  // Academic year handlers
+  const [yearFormData, setYearFormData] = useState({ Nam1: '', Nam2: '' });
+  const handleSubmitAcademicYear = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setLoading(true);
+      setError(null);
+      await api.createAcademicYear({ Nam1: Number(yearFormData.Nam1), Nam2: Number(yearFormData.Nam2) });
+      setYearFormData({ Nam1: '', Nam2: '' });
+      await loadAcademicYears();
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 2000);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || err.message || 'Không thể tạo năm học');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const loadSemesters = async () => {
@@ -78,6 +120,15 @@ export function RegulationManagement() {
       setError(err.message || 'Không thể tải danh sách khối lớp');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadClasses = async () => {
+    try {
+      const data = await api.listClasses();
+      setClasses(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      console.error('Failed to load classes:', err);
     }
   };
 
@@ -158,6 +209,7 @@ export function RegulationManagement() {
       setIsAddingSubject(false);
       setSubjectFormData({
         TenMonHoc: '',
+        MaMon: '',
         HeSoMon: 1,
         MoTa: ''
       });
@@ -174,6 +226,7 @@ export function RegulationManagement() {
     setEditingSubjectId(subject.MaMonHoc);
     setSubjectFormData({
       TenMonHoc: subject.TenMonHoc,
+      MaMon: subject.MaMon || '',
       HeSoMon: subject.HeSoMon,
       MoTa: subject.MoTa || ''
     });
@@ -252,6 +305,73 @@ export function RegulationManagement() {
       setTimeout(() => setSuccess(false), 3000);
     } catch (err: any) {
       setError(err.message || 'Không thể xóa khối lớp');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Class handlers
+  const handleSubmitClass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    try {
+      setLoading(true);
+      setError(null);
+
+      if (!classFormData.MaKhoiLop || !classFormData.MaNamHoc) {
+        setError('Vui lòng chọn khối lớp và năm học');
+        return;
+      }
+
+      // Check if grade has reached max classes
+      const selectedGrade = grades.find(g => String(g.MaKL) === String(classFormData.MaKhoiLop));
+      if (selectedGrade && selectedGrade.SoLop) {
+        const classesInGrade = classes.filter(
+          c => String(c.MaKhoiLop) === String(classFormData.MaKhoiLop) &&
+               String(c.MaNamHoc) === String(classFormData.MaNamHoc)
+        );
+        if (classesInGrade.length >= selectedGrade.SoLop) {
+          setError(`Khối ${selectedGrade.TenKL} đã đủ ${selectedGrade.SoLop} lớp cho năm học này`);
+          return;
+        }
+      }
+
+      await api.createClass({
+        TenLop: classFormData.TenLop,
+        MaKhoiLop: parseInt(classFormData.MaKhoiLop),
+        MaNamHoc: parseInt(classFormData.MaNamHoc),
+        SiSo: classFormData.SiSo || undefined,
+      });
+
+      setSuccess(true);
+      setIsAddingClass(false);
+      setClassFormData({
+        TenLop: '',
+        MaKhoiLop: '',
+        MaNamHoc: '',
+        SiSo: 0,
+      });
+      await loadClasses();
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Không thể tạo lớp học');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteClass = async (MaLop: number) => {
+    if (!confirm('Bạn có chắc chắn muốn xóa lớp này?')) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+      await api.deleteClass(String(MaLop));
+      setSuccess(true);
+      await loadClasses();
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Không thể xóa lớp học');
     } finally {
       setLoading(false);
     }
@@ -364,6 +484,70 @@ export function RegulationManagement() {
             </div>
           </div>
 
+          {/* ACADEMIC YEARS SECTION */}
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-gray-900">Tạo năm học</h2>
+            </div>
+
+            <form onSubmit={handleSubmitAcademicYear} className="bg-gray-50 p-4 rounded-lg mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-gray-700 mb-2">Năm bắt đầu *</label>
+                  <input
+                    type="number"
+                    required
+                    value={yearFormData.Nam1}
+                    onChange={(e) => setYearFormData({ ...yearFormData, Nam1: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="2024"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-700 mb-2">Năm kết thúc *</label>
+                  <input
+                    type="number"
+                    required
+                    value={yearFormData.Nam2}
+                    onChange={(e) => setYearFormData({ ...yearFormData, Nam2: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="2025"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+                  disabled={loading}
+                >
+                  <Save className="w-4 h-4" />
+                  Thêm năm học
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setYearFormData({ Nam1: '', Nam2: '' })}
+                  className="flex items-center gap-2 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300"
+                >
+                  <X className="w-4 h-4" />
+                  Hủy
+                </button>
+              </div>
+            </form>
+
+            <div className="space-y-2">
+              {academicYears.map((year) => (
+                <div key={year.MaNH} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="text-gray-900">{year.Nam1} - {year.Nam2}</div>
+                  <span className="text-sm text-gray-600">Mã: {year.MaNH}</span>
+                </div>
+              ))}
+              {academicYears.length === 0 && (
+                <div className="text-center py-4 text-gray-500">Chưa có năm học nào</div>
+              )}
+            </div>
+          </div>
+
           {/* SUBJECTS SECTION */}
           <div className="bg-white rounded-xl shadow-sm p-6">
             <div className="flex justify-between items-center mb-4">
@@ -391,6 +575,16 @@ export function RegulationManagement() {
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       placeholder="Ví dụ: Toán"
                       required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 mb-2">Mã môn (tùy chọn)</label>
+                    <input
+                      type="text"
+                      value={subjectFormData.MaMon}
+                      onChange={(e) => setSubjectFormData({ ...subjectFormData, MaMon: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="Ví dụ: TOAN"
                     />
                   </div>
                   <div>
@@ -428,7 +622,7 @@ export function RegulationManagement() {
                     onClick={() => {
                       setIsAddingSubject(false);
                       setEditingSubjectId(null);
-                      setSubjectFormData({ TenMonHoc: '', HeSoMon: 1, MoTa: '' });
+                      setSubjectFormData({ TenMonHoc: '', MaMon: '', HeSoMon: 1, MoTa: '' });
                     }}
                     className="flex items-center gap-2 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300"
                   >
@@ -446,6 +640,7 @@ export function RegulationManagement() {
                     <div className="text-gray-900">{subject.TenMonHoc}</div>
                     <div className="text-sm text-gray-600">
                       Hệ số: {subject.HeSoMon}
+                      {subject.MaMon && ` • Mã: ${subject.MaMon}`}
                       {subject.MoTa && ` • ${subject.MoTa}`}
                     </div>
                   </div>
@@ -563,6 +758,134 @@ export function RegulationManagement() {
               {grades.length === 0 && (
                 <div className="text-center py-8 text-gray-500">
                   Chưa có khối lớp nào. Nhấn "Thêm khối lớp" để bắt đầu.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* CLASSES SECTION */}
+          <div className="bg-white rounded-xl shadow-sm p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-gray-900">Quản lý lớp học</h2>
+              {!isAddingClass && (
+                <button
+                  onClick={() => setIsAddingClass(true)}
+                  className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+                >
+                  <Plus className="w-5 h-5" />
+                  Thêm lớp học
+                </button>
+              )}
+            </div>
+
+            {isAddingClass && (
+              <form onSubmit={handleSubmitClass} className="bg-gray-50 p-4 rounded-lg mb-4">
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-gray-700 mb-2">Tên lớp *</label>
+                    <input
+                      type="text"
+                      value={classFormData.TenLop}
+                      onChange={(e) => setClassFormData({ ...classFormData, TenLop: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="Ví dụ: 10A1"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 mb-2">Khối lớp *</label>
+                    <select
+                      value={classFormData.MaKhoiLop}
+                      onChange={(e) => setClassFormData({ ...classFormData, MaKhoiLop: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      required
+                    >
+                      <option value="">-- Chọn khối --</option>
+                      {grades.map((grade) => (
+                        <option key={grade.MaKL} value={grade.MaKL}>
+                          Khối {grade.TenKL} (Tối đa {grade.SoLop || 0} lớp)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 mb-2">Năm học *</label>
+                    <select
+                      value={classFormData.MaNamHoc}
+                      onChange={(e) => setClassFormData({ ...classFormData, MaNamHoc: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      required
+                    >
+                      <option value="">-- Chọn năm học --</option>
+                      {academicYears.map((year) => (
+                        <option key={year.MaNH} value={year.MaNH}>
+                          {year.Nam1}-{year.Nam2}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 mb-2">Sĩ số</label>
+                    <input
+                      type="number"
+                      value={classFormData.SiSo}
+                      onChange={(e) => setClassFormData({ ...classFormData, SiSo: parseInt(e.target.value) })}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      min="0"
+                      placeholder="Để trống = tối đa theo tham số"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
+                  >
+                    <Save className="w-4 h-4" />
+                    Thêm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddingClass(false);
+                      setClassFormData({ TenLop: '', MaKhoiLop: '', MaNamHoc: '', SiSo: 0 });
+                    }}
+                    className="flex items-center gap-2 bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300"
+                  >
+                    <X className="w-4 h-4" />
+                    Hủy
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <div className="space-y-2">
+              {classes.map((cls: any) => {
+                const grade = grades.find(g => g.MaKL === cls.MaKhoiLop);
+                const year = academicYears.find(y => y.MaNH === cls.MaNamHoc);
+                return (
+                  <div key={cls.MaLop} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <div className="text-gray-900">{cls.TenLop}</div>
+                      <div className="text-sm text-gray-600">
+                        Khối {grade?.TenKL || cls.MaKhoiLop} • Năm học {year ? `${year.Nam1}-${year.Nam2}` : cls.MaNamHoc}
+                        {cls.SiSo && ` • Sĩ số: ${cls.SiSo}`}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleDeleteClass(cls.MaLop)}
+                        className="text-red-600 hover:text-red-800"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+              {classes.length === 0 && (
+                <div className="text-center py-8 text-gray-500">
+                  Chưa có lớp học nào. Nhấn "Thêm lớp học" để bắt đầu.
                 </div>
               )}
             </div>
