@@ -18,9 +18,10 @@ interface TeacherGradePayload {
 
 interface GradeSearchProps {
   userRole: 'teacher' | 'student';
+  teacherId?: number | null;
 }
 
-export function GradeSearch({ userRole }: GradeSearchProps) {
+export function GradeSearch({ userRole, teacherId }: GradeSearchProps) {
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
   const [selectedSemester, setSelectedSemester] = useState<string>('1'); // MaHocKy

@@ -21,6 +21,8 @@ import { SemesterReport } from './admin/SemesterReport';
 import { UserManagement } from './admin/UserManagement';
 import { UserGroupManagement } from './admin/UserGroupManagement';
 import { PermissionManagement } from './admin/PermissionManagement';
+import { TeacherAssignmentManagement } from './admin/TeacherAssignmentManagement';
+import { UserProfile } from './shared/UserProfile';
 
 interface AdminDashboardProps {
   user: User;
@@ -35,17 +37,21 @@ type AdminScreen =
   | 'subject-report'
   | 'user-management'
   | 'user-group-management'
-  | 'permission-management';
+  | 'permission-management'
+  | 'teacher-assignment'
+  | 'profile';
 
 export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
   const [currentScreen, setCurrentScreen] = useState<AdminScreen>('home');
 
   const menuItems = [
     { id: 'home' as AdminScreen, label: 'Trang chủ', icon: Home },
+    { id: 'profile' as AdminScreen, label: 'Chỉnh sửa tài khoản', icon: UserCog },
     { id: 'regulations' as AdminScreen, label: 'Thay đổi quy định', icon: BookOpen },
     { id: 'parameters' as AdminScreen, label: 'Thay đổi tham số', icon: Settings },
     { id: 'semester-report' as AdminScreen, label: 'Báo cáo học kỳ', icon: FileText },
     { id: 'subject-report' as AdminScreen, label: 'Báo cáo môn học', icon: BarChart3 },
+    { id: 'teacher-assignment' as AdminScreen, label: 'Quản lý phân công GV', icon: Users },
     { id: 'user-management' as AdminScreen, label: 'Quản lý người dùng', icon: UserCog },
     { id: 'user-group-management' as AdminScreen, label: 'Quản lý nhóm người dùng', icon: UsersRound },
     { id: 'permission-management' as AdminScreen, label: 'Quản lý quyền truy cập', icon: Shield },
@@ -121,9 +127,11 @@ export function AdminDashboard({ user, onLogout }: AdminDashboardProps) {
           {currentScreen === 'parameters' && <ParameterSettings />}
           {currentScreen === 'semester-report' && <SemesterReport />}
           {currentScreen === 'subject-report' && <SubjectReport />}
+          {currentScreen === 'teacher-assignment' && <TeacherAssignmentManagement />}
           {currentScreen === 'user-management' && <UserManagement />}
           {currentScreen === 'user-group-management' && <UserGroupManagement />}
           {currentScreen === 'permission-management' && <PermissionManagement />}
+          {currentScreen === 'profile' && <UserProfile user={user} />}
         </div>
       </div>
     </div>

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { GradeSearch } from './shared/GradeSearch';
 import { ClassSearch } from './shared/ClassSearch';
+import { UserProfile } from './shared/UserProfile';
 
 interface StudentDashboardProps {
   user: User;
@@ -18,13 +19,15 @@ interface StudentDashboardProps {
 type StudentScreen = 
   | 'home'
   | 'grade-search'
-  | 'class-search';
+  | 'class-search'
+  | 'profile';
 
 export function StudentDashboard({ user, onLogout }: StudentDashboardProps) {
   const [currentScreen, setCurrentScreen] = useState<StudentScreen>('home');
 
   const menuItems = [
     { id: 'home' as StudentScreen, label: 'Trang chủ', icon: Home },
+    { id: 'profile' as StudentScreen, label: 'Chỉnh sửa tài khoản', icon: Search },
     { id: 'grade-search' as StudentScreen, label: 'Tra cứu điểm', icon: Search },
     { id: 'class-search' as StudentScreen, label: 'Tra cứu lớp học', icon: BookOpen },
   ];
@@ -119,6 +122,7 @@ export function StudentDashboard({ user, onLogout }: StudentDashboardProps) {
           )}
           {currentScreen === 'grade-search' && <GradeSearch userRole="student" />}
           {currentScreen === 'class-search' && <ClassSearch userRole="student" />}
+          {currentScreen === 'profile' && <UserProfile user={user} />}
         </div>
       </div>
     </div>

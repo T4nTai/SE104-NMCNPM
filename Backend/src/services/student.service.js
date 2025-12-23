@@ -1,7 +1,8 @@
 import { Op } from "sequelize";
-import { HocSinhLop, Lop } from "../models/student.model.js";
+import { HocSinhLop, Lop, HocSinh } from "../models/student.model.js";
 import { BangDiemMon, CTBangDiemMonHocSinh, CTBangDiemMonLHKT } from "../models/gradebook.model.js";
 import { LoaiHinhKiemTra, MonHoc } from "../models/academic.model.js";
+import { NguoiDung } from "../models/auth.model.js";
 
 export class StudentService {
   static async getMyClasses({ MaHocSinh, MaHocKy = null }) {
@@ -98,5 +99,55 @@ export class StudentService {
     }
 
     return result;
+  }
+
+  // Lấy chi tiết lớp cho học sinh: danh sách bạn cùng lớp và GVCN
+  static async getClassDetails({ MaHocSinh, MaLop, MaHocKy }) {
+    if (!MaHocSinh || !MaLop || !MaHocKy) {
+      throw { status: 400, message: "MaHocSinh, MaLop, MaHocKy are required" };
+    }
+
+    // Xác thực học sinh thuộc lớp và học kỳ
+    const enroll = await HocSinhLop.findOne({ where: { MaHocSinh, MaLop, MaHocKy } });
+    if (!enroll) {
+      // Không trả lỗi 403 để trải nghiệm mượt, chỉ trả về rỗng
+      return { classmates: [], classInfo: null };
+    }
+
+    // Lấy danh sách học sinh cùng lớp trong học kỳ
+    const enrollments = await HocSinhLop.findAll({ where: { MaLop, MaHocKy } });
+    const studentIds = enrollments.map((e) => e.MaHocSinh);
+    const students = await HocSinh.findAll({ where: { MaHocSinh: { [Op.in]: studentIds } }, order: [["MaHocSinh", "ASC"]] });
+
+    // Lấy thông tin lớp và GVCN
+    const lop = await Lop.findByPk(MaLop);
+    let gvc = null;
+    if (lop?.MaGVCN) {
+      gvc = await NguoiDung.findByPk(lop.MaGVCN);
+    }
+
+    return {
+      classInfo: lop ? {
+        MaLop: lop.MaLop,
+        TenLop: lop.TenLop,
+        MaKhoiLop: lop.MaKhoiLop,
+        MaNamHoc: lop.MaNamHoc,
+        MaGVCN: lop.MaGVCN ?? null,
+        GVCN: gvc ? {
+          MaNguoiDung: gvc.MaNguoiDung,
+          HoVaTen: gvc.HoVaTen,
+          Email: gvc.Email,
+        } : null,
+      } : null,
+      classmates: students.map((s) => ({
+        MaHocSinh: s.MaHocSinh,
+        HoTen: s.HoTen,
+        GioiTinh: s.GioiTinh,
+        NgaySinh: s.NgaySinh,
+        Email: s.Email,
+        SDT: s.SDT,
+        DiaChi: s.DiaChi,
+      })),
+    };
   }
 }

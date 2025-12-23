@@ -1,7 +1,12 @@
 import { Router } from "express";
 import { AdminController } from "../controllers/admin.controller.js";
+import { upload } from "../middlewares/upload.middleware.js";
+import { authenticateJWT } from "../middlewares/auth.middleware.js";
 
 const AdminRoute = Router();
+
+// Tất cả routes của admin cần JWT authentication
+AdminRoute.use(authenticateJWT);
 
 // ===== Nam Hoc (Academic Years) =====
 AdminRoute.get("/namhoc", AdminController.listNamHoc);
@@ -55,6 +60,9 @@ AdminRoute.patch("/namhoc/:MaNH/thamso/upsert", AdminController.upsertThamSo);
 AdminRoute.post("/lop", AdminController.createLop);
 AdminRoute.get("/lop", AdminController.listLop);
 AdminRoute.delete("/lop/:MaLop", AdminController.deleteLop);
+// Phân công giáo viên chủ nhiệm
+AdminRoute.put("/lop/:MaLop/assign-homeroom", AdminController.assignHomeroom);
+AdminRoute.patch("/lop/:MaLop/assign-homeroom", AdminController.assignHomeroom);
 
 // ===== Quyen (Permissions) =====
 AdminRoute.post("/quyen", AdminController.createQuyen);
@@ -80,5 +88,15 @@ AdminRoute.put("/nguoidung/:MaNguoiDung", AdminController.updateNguoiDung);
 AdminRoute.patch("/nguoidung/:MaNguoiDung", AdminController.updateNguoiDung);
 AdminRoute.delete("/nguoidung/:MaNguoiDung", AdminController.deleteNguoiDung);
 AdminRoute.post("/nguoidung/:MaNguoiDung/reset-password", AdminController.resetMatKhau);
+AdminRoute.post("/nguoidung/import", upload.single("file"), AdminController.importNguoiDung);
+
+// Phân công giáo viên bộ môn cho Bảng điểm môn (theo lớp-môn-học kỳ)
+AdminRoute.put("/gradebooks/assign-teacher", AdminController.assignSubjectTeacher);
+AdminRoute.post("/gradebooks/assign-teacher", AdminController.assignSubjectTeacher);
+
+// ===== Quản lý phân công giáo viên =====
+AdminRoute.get("/class-assignments", AdminController.listClassAssignments);
+AdminRoute.delete("/class-assignments/homeroom/:MaLop", AdminController.removeHomeroomTeacher);
+AdminRoute.delete("/class-assignments/subject/:MaBangDiemMon", AdminController.removeSubjectTeacher);
 
 export default AdminRoute;

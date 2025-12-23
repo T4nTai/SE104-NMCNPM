@@ -1,16 +1,53 @@
 import { TeacherService } from "../services/teacher.service.js";
 import { sendAccountCreationEmail } from "../ultis/email.js";
+import { parseSpreadsheet } from "../ultis/spreadsheet.js";
 
 export class TeacherController {
+  static async listAssignments(req, res, next) {
+    try {
+      const MaGV = req.query.MaGV ? Number(req.query.MaGV) : (req.user?.userId || null);
+      console.log('[listAssignments] Request for MaGV:', MaGV);
+      
+      const data = await TeacherService.listAssignmentsForTeacher({ MaGV });
+      
+      console.log('[listAssignments] Returning data:', {
+        homeroomCount: data.homeroom?.length || 0,
+        subjectCount: data.subject?.length || 0
+      });
+      
+      res.json({ data });
+    } catch (e) { 
+      console.error('[listAssignments] Error:', e);
+      next(e); 
+    }
+  }
+
   static async listClasses(req, res, next) {
     try {
+      // Get MaGV from JWT token (req.user.userId), or from query param for backward compatibility
+      const MaGV = req.query.MaGV ? Number(req.query.MaGV) : (req.user?.userId || null);
+      
+      console.log('[listClasses] Request params:', {
+        MaGV,
+        MaNamHoc: req.query.MaNamHoc,
+        MaKhoiLop: req.query.MaKhoiLop,
+        MaHocKy: req.query.MaHocKy,
+        userId: req.user?.userId
+      });
+      
       const rows = await TeacherService.listClasses({
+        MaGV,
         MaNamHoc: req.query.MaNamHoc ? Number(req.query.MaNamHoc) : null,
         MaKhoiLop: req.query.MaKhoiLop ? Number(req.query.MaKhoiLop) : null,
         MaHocKy: req.query.MaHocKy ? Number(req.query.MaHocKy) : null,
       });
+      
+      console.log(`[listClasses] Found ${rows.length} classes for teacher ${MaGV}`);
       res.json({ data: rows });
-    } catch (e) { next(e); }
+    } catch (e) { 
+      console.error('[listClasses] Error:', e);
+      next(e); 
+    }
   }
 
   static async getStudentsByClass(req, res, next) {
@@ -75,6 +112,22 @@ export class TeacherController {
     } catch (e) { next(e); }
   }
 
+  static async importGrades(req, res, next) {
+    try {
+      const { MaLop, MaMon, MaHocKy } = req.params;
+      if (!req.file) throw { status: 400, message: "File không được gửi" };
+      
+      const result = await TeacherService.importGrades({
+        MaLop: Number(MaLop),
+        MaMon: Number(MaMon),
+        MaHocKy: Number(MaHocKy),
+        file: req.file
+      });
+      
+      res.json({ data: result });
+    } catch (e) { next(e); }
+  }
+
   // GET /teacher/students/:MaHocSinh/scores?MaHocKy=
   static async lookupScoresOfStudent(req, res, next) {
     try {
@@ -93,6 +146,22 @@ export class TeacherController {
     try {
       const data = await TeacherService.searchStudents({ q: req.query.q });
       res.json({ data });
+    } catch (e) { next(e); }
+  }
+
+  static async importStudents(req, res, next) {
+    try {
+      const { MaLop, MaHocKy } = req.params;
+      if (!req.file) throw { status: 400, message: "Vui lòng chọn file CSV/XLSX" };
+
+      const rows = parseSpreadsheet(req.file.buffer);
+      const result = await TeacherService.importStudentsFromRows({
+        MaLop: Number(MaLop),
+        MaHocKy: Number(MaHocKy),
+        rows,
+      });
+
+      res.status(201).json({ data: result });
     } catch (e) { next(e); }
   }
 }

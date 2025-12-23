@@ -44,7 +44,16 @@ export interface ClassInfo {
   MaKhoiLop: string;
   TenKhoiLop?: string;
   MaNamHoc?: string;
+  NamHoc?: string;
   SiSo?: number;
+  SoLuongHocSinh?: number;
+  roles?: ('homeroom' | 'subject')[]; // Roles of teacher in this class
+  subjects?: Array<{
+    MaMon: number;
+    TenMonHoc?: string;
+    MaHocKy?: number;
+    TenHK?: string;
+  }>;
   DanhSachHocSinh?: StudentInClass[];
 }
 
@@ -145,5 +154,12 @@ export interface UpdateNguoiDungPayload {
   Email?: string;
   MaNhomNguoiDung?: number;
   MaHocSinh?: string;
+}
+
+export interface ImportSummary {
+  total: number;
+  imported: number;
+  failed: number;
+  errors: Array<{ row: number; message: string }>;
 }
 

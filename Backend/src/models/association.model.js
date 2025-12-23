@@ -30,6 +30,10 @@ export function initAssociations() {
   HocKy.hasMany(BangDiemMon, { foreignKey: "MaHocKy" });
   MonHoc.hasMany(BangDiemMon, { foreignKey: "MaMon" });
 
+  // Gán giáo viên bộ môn cho BANGDIEMMON
+  BangDiemMon.belongsTo(NguoiDung, { foreignKey: "MaGV", as: "GVMon" });
+  NguoiDung.hasMany(BangDiemMon, { foreignKey: "MaGV", as: "bangDiemMonGiangDay" });
+
   // CT_BANGDIEMMON_HOCSINH -> BANGDIEMMON, HOCSINH
   CTBangDiemMonHocSinh.belongsTo(BangDiemMon, { foreignKey: "MaBangDiemMon" });
   CTBangDiemMonHocSinh.belongsTo(HocSinh, { foreignKey: "MaHocSinh" });
@@ -86,4 +90,8 @@ export function initAssociations() {
   // NGUOIDUNG -> HOCSINH
   NguoiDung.belongsTo(HocSinh, { foreignKey: "MaHocSinh", targetKey: "MaHocSinh", as: "hocSinh" });
   HocSinh.hasOne(NguoiDung, { foreignKey: "MaHocSinh", sourceKey: "MaHocSinh", as: "nguoiDung" });
+
+  // LOP -> NGUOIDUNG (Giáo viên chủ nhiệm)
+  Lop.belongsTo(NguoiDung, { foreignKey: "MaGVCN", as: "GVCN" });
+  NguoiDung.hasMany(Lop, { foreignKey: "MaGVCN", as: "lopChuNhiem" });
 }

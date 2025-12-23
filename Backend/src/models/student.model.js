@@ -30,6 +30,7 @@ export const Lop = sequelize.define(
     MaKhoiLop: { type: DataTypes.INTEGER, allowNull: false },
     MaNamHoc: { type: DataTypes.INTEGER, allowNull: false },
     SiSo: { type: DataTypes.INTEGER, allowNull: true },
+    MaGVCN: { type: DataTypes.INTEGER, allowNull: true },
   },
   { tableName: "LOP", timestamps: false }
 );

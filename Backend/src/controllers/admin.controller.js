@@ -1,4 +1,5 @@
 import { AdminService } from "../services/admin.service.js";
+import { parseSpreadsheet } from "../ultis/spreadsheet.js";
 
 export class AdminController {
   // ===== NAM HOC =====
@@ -253,6 +254,16 @@ export class AdminController {
     } catch (e) { next(e); }
   }
 
+  // ===== PHÂN CÔNG GVCN CHO LỚP =====
+  static async assignHomeroom(req, res, next) {
+    try {
+      const MaLop = Number(req.params.MaLop);
+      if (!Number.isInteger(MaLop)) throw { status: 400, message: "MaLop không hợp lệ" };
+      const row = await AdminService.assignHomeroomTeacher(MaLop, req.body);
+      res.json({ data: row });
+    } catch (e) { next(e); }
+  }
+
   // ===== QUYEN (PERMISSIONS) =====
   static async createQuyen(req, res, next) {
     try {
@@ -388,6 +399,58 @@ export class AdminController {
       const id = Number(req.params.MaNguoiDung);
       if (!Number.isInteger(id)) throw { status: 400, message: "MaNguoiDung không hợp lệ" };
       const result = await AdminService.resetMatKhau(id, req.body);
+      res.json({ data: result });
+    } catch (e) { next(e); }
+  }
+
+  static async importNguoiDung(req, res, next) {
+    try {
+      if (!req.file) throw { status: 400, message: "Vui lòng chọn file CSV/XLSX" };
+      const rows = parseSpreadsheet(req.file.buffer);
+      const result = await AdminService.importNguoiDungFromRows(rows);
+      res.status(201).json({ data: result });
+    } catch (e) { next(e); }
+  }
+
+  // ===== PHÂN CÔNG GV BỘ MÔN CHO BẢNG ĐIỂM MÔN =====
+  static async assignSubjectTeacher(req, res, next) {
+    try {
+      const payload = {
+        MaLop: req.body.MaLop != null ? Number(req.body.MaLop) : null,
+        MaMon: req.body.MaMon != null ? Number(req.body.MaMon) : null,
+        MaHocKy: req.body.MaHocKy != null ? Number(req.body.MaHocKy) : null,
+        MaGV: req.body.MaGV != null ? Number(req.body.MaGV) : null,
+      };
+      const row = await AdminService.assignSubjectTeacher(payload);
+      res.json({ data: row });
+    } catch (e) { next(e); }
+  }
+
+  // ===== QUẢN LÝ PHÂN CÔNG GIÁO VIÊN =====
+  static async listClassAssignments(req, res, next) {
+    try {
+      const rows = await AdminService.listClassAssignments({
+        MaNamHoc: req.query.MaNamHoc ? Number(req.query.MaNamHoc) : null,
+        MaKhoiLop: req.query.MaKhoiLop ? Number(req.query.MaKhoiLop) : null,
+      });
+      res.json({ data: rows });
+    } catch (e) { next(e); }
+  }
+
+  static async removeHomeroomTeacher(req, res, next) {
+    try {
+      const MaLop = Number(req.params.MaLop);
+      if (!Number.isInteger(MaLop)) throw { status: 400, message: "MaLop không hợp lệ" };
+      const result = await AdminService.removeHomeroomTeacher(MaLop);
+      res.json({ data: result });
+    } catch (e) { next(e); }
+  }
+
+  static async removeSubjectTeacher(req, res, next) {
+    try {
+      const MaBangDiemMon = Number(req.params.MaBangDiemMon);
+      if (!Number.isInteger(MaBangDiemMon)) throw { status: 400, message: "MaBangDiemMon không hợp lệ" };
+      const result = await AdminService.removeSubjectTeacher(MaBangDiemMon);
       res.json({ data: result });
     } catch (e) { next(e); }
   }

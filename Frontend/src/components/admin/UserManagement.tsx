@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Save, X, Search, RefreshCw, Key } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Search, RefreshCw, Key, Upload, Download, CheckSquare, Square } from 'lucide-react';
 import { api } from '../../api/client';
-import type { NguoiDung, NhomNguoiDung, CreateNguoiDungPayload } from '../../api/types';
+import type { NguoiDung, NhomNguoiDung, CreateNguoiDungPayload, ImportSummary } from '../../api/types';
 
 interface FormData extends Omit<CreateNguoiDungPayload, 'sendEmail'> {
   sendEmail: boolean;
@@ -16,6 +16,10 @@ export function UserManagement() {
   const [selectedGroup, setSelectedGroup] = useState<number | 'all'>('all');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importResult, setImportResult] = useState<ImportSummary | null>(null);
+  const [selectedUsers, setSelectedUsers] = useState<Set<number>>(new Set());
   const [formData, setFormData] = useState<FormData>({
     TenDangNhap: '',
     MatKhau: '',
@@ -187,6 +191,41 @@ export function UserManagement() {
     setError(null);
   };
 
+  const handleDownloadTemplate = () => {
+    const csv = [
+      ['Tên đăng nhập', 'Mật khẩu', 'Họ và tên', 'Email', 'Nhóm người dùng', 'Gửi thông tin đăng nhập qua email'].join(','),
+      ['giaovien01', '123456', 'Nguyen Van A', 'giaovien01@school.com', 'teacher', 'yes'].join(','),
+      ['giaovien02', '123456', 'Tran Thi B', 'giaovien02@school.com', 'teacher', 'no'].join(','),
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'users_template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImport = async () => {
+    if (!importFile) {
+      alert('Vui lòng chọn file CSV/XLSX');
+      return;
+    }
+    setImporting(true);
+    setError(null);
+    setImportResult(null);
+    try {
+      const result = await api.importNguoiDung(importFile);
+      setImportResult(result as ImportSummary);
+      await fetchUsers();
+    } catch (err: any) {
+      setError(err.response?.data?.message || err.message || 'Không thể nhập file');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const filteredUsers = users.filter((u) => {
     const matchSearch =
       (u.HoVaTen?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
@@ -195,6 +234,59 @@ export function UserManagement() {
     const matchGroup = selectedGroup === 'all' || u.MaNhomNguoiDung === selectedGroup;
     return matchSearch && matchGroup;
   });
+
+  const allSelected = filteredUsers.length > 0 && filteredUsers.every(u => selectedUsers.has(u.MaNguoiDung));
+  const someSelected = filteredUsers.some(u => selectedUsers.has(u.MaNguoiDung));
+
+  const handleSelectAll = () => {
+    if (allSelected) {
+      filteredUsers.forEach(u => selectedUsers.delete(u.MaNguoiDung));
+      setSelectedUsers(new Set(selectedUsers));
+    } else {
+      const newSelected = new Set(selectedUsers);
+      filteredUsers.forEach(u => newSelected.add(u.MaNguoiDung));
+      setSelectedUsers(newSelected);
+    }
+  };
+
+  const handleSelectUser = (userId: number) => {
+    setSelectedUsers(prev => {
+      const newSelected = new Set(prev);
+      if (newSelected.has(userId)) {
+        newSelected.delete(userId);
+      } else {
+        newSelected.add(userId);
+      }
+      console.log('Selected users:', Array.from(newSelected)); // Debug log
+      return newSelected;
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    console.log('handleBulkDelete called with users:', Array.from(selectedUsers)); // Debug log
+    if (selectedUsers.size === 0) return;
+    if (!confirm(`Bạn có chắc chắn muốn xóa ${selectedUsers.size} người dùng đã chọn?`)) return;
+
+    setLoading(true);
+    let deleted = 0;
+    let failed = 0;
+
+    for (const userId of selectedUsers) {
+      try {
+        console.log(`Deleting user ${userId}`); // Debug log
+        await api.deleteNguoiDung(userId);
+        deleted += 1;
+      } catch (err) {
+        console.error(`Failed to delete user ${userId}:`, err); // Debug log
+        failed += 1;
+      }
+    }
+
+    setSelectedUsers(new Set());
+    await fetchUsers();
+    setLoading(false);
+    alert(`Đã xóa ${deleted} người dùng. ${failed > 0 ? failed + ' lỗi.' : ''}`);
+  };
 
   return (
     <div>
@@ -214,6 +306,31 @@ export function UserManagement() {
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
           {error}
+        </div>
+      )}
+
+      {/* Selection Info */}
+      {selectedUsers.size > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex items-center justify-between">
+          <span className="text-blue-900 font-medium">
+            Đã chọn {selectedUsers.size} người dùng
+          </span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleBulkDelete}
+              disabled={loading}
+              className="flex items-center gap-2 bg-white border-2 border-red-600 text-red-600 px-4 py-2 rounded-lg hover:bg-red-50 disabled:opacity-50 font-medium"
+            >
+              <Trash2 className="w-4 h-4" />
+              Xóa {selectedUsers.size} mục
+            </button>
+            <button
+              onClick={() => setSelectedUsers(new Set())}
+              className="text-sm text-blue-600 hover:text-blue-700 underline"
+            >
+              Bỏ chọn
+            </button>
+          </div>
         </div>
       )}
 
@@ -249,8 +366,60 @@ export function UserManagement() {
         </div>
       </div>
 
-      {/* Add Button */}
-      <div className="flex justify-end items-center mb-6">
+      {/* Import from CSV/Excel */}
+      <div className="bg-white p-4 rounded-xl shadow-sm mb-6 flex flex-col gap-3">
+        <div className="flex items-center gap-3">
+          <Upload className="w-5 h-5 text-blue-600" />
+          <div>
+            <p className="text-gray-900 font-medium">Nhập người dùng từ CSV/Excel</p>
+            <p className="text-gray-500 text-sm">Cột bắt buộc: Tên đăng nhập, Mật khẩu, Họ và tên, Email. Có thể điền Nhóm người dùng.</p>
+          </div>
+        </div>
+        <div className="flex flex-col md:flex-row gap-3 items-start md:items-center">
+          <input
+            type="file"
+            accept=".csv, application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+            className="text-sm"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={handleImport}
+              disabled={importing}
+              className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              <Upload className="w-4 h-4" />
+              {importing ? 'Đang nhập...' : 'Nhập file'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadTemplate}
+              className="flex items-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200"
+            >
+              <Download className="w-4 h-4" />
+              Tải mẫu CSV
+            </button>
+          </div>
+        </div>
+        {importResult && (
+          <div className="text-sm text-gray-700 bg-blue-50 border border-blue-100 rounded-lg p-3">
+            <p>Kết quả: {importResult.imported}/{importResult.total} thành công, {importResult.failed} lỗi.</p>
+            {importResult.errors.length > 0 && (
+              <ul className="list-disc list-inside text-red-700 mt-2 space-y-1 max-h-28 overflow-y-auto">
+                {importResult.errors.slice(0, 5).map((err, idx) => (
+                  <li key={`${err.row}-${idx}`}>Dòng {err.row}: {err.message}</li>
+                ))}
+                {importResult.errors.length > 5 && (
+                  <li className="text-red-600">... và {importResult.errors.length - 5} lỗi khác</li>
+                )}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Add Button & Bulk Actions */}
+      <div className="flex flex-wrap justify-between items-center mb-6 gap-3">
         {!isAdding && (
           <button
             onClick={() => setIsAdding(true)}
@@ -392,6 +561,21 @@ export function UserManagement() {
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+                  <button
+                    onClick={handleSelectAll}
+                    className="hover:bg-gray-200 p-1 rounded"
+                    title={allSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                  >
+                    {allSelected ? (
+                      <CheckSquare className="w-5 h-5 text-blue-600" />
+                    ) : someSelected ? (
+                      <div className="w-5 h-5 border-2 border-blue-600 rounded bg-blue-50" />
+                    ) : (
+                      <Square className="w-5 h-5 text-gray-400" />
+                    )}
+                  </button>
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Mã
                 </th>
@@ -415,19 +599,31 @@ export function UserManagement() {
             <tbody className="divide-y divide-gray-200 bg-white">
               {loading && users.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                     Đang tải dữ liệu...
                   </td>
                 </tr>
               ) : filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
                     Không tìm thấy người dùng nào
                   </td>
                 </tr>
               ) : (
                 filteredUsers.map((user) => (
                   <tr key={user.MaNguoiDung} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                      <button
+                        onClick={() => handleSelectUser(user.MaNguoiDung)}
+                        className="hover:bg-gray-100 p-1 rounded"
+                      >
+                        {selectedUsers.has(user.MaNguoiDung) ? (
+                          <CheckSquare className="w-5 h-5 text-blue-600" />
+                        ) : (
+                          <Square className="w-5 h-5 text-gray-300" />
+                        )}
+                      </button>
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {user.MaNguoiDung}
                     </td>

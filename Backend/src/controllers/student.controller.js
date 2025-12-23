@@ -34,4 +34,21 @@ export class StudentController {
       res.json({ data });
     } catch (e) { next(e); }
   }
+
+  static async classDetails(req, res, next) {
+    try {
+      const MaHocSinh = req.user?.MaHocSinh;
+      if (!MaHocSinh) {
+        return res.json({ data: { classmates: [], classInfo: null } });
+      }
+
+      const { MaLop, MaHocKy } = req.params;
+      const data = await StudentService.getClassDetails({
+        MaHocSinh,
+        MaLop: Number(MaLop),
+        MaHocKy: Number(MaHocKy),
+      });
+      res.json({ data });
+    } catch (e) { next(e); }
+  }
 }

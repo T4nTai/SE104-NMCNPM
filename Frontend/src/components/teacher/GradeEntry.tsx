@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Save } from 'lucide-react';
+import { Save, Upload, Download } from 'lucide-react';
 import { api } from '../../api/client';
 import { ClassInfo, StudentInClass } from '../../api/types';
 
@@ -23,7 +23,7 @@ interface GradeEntry {
   average: number | null;
 }
 
-export function GradeEntry() {
+export function GradeEntry({ teacherId }: { teacherId: number | null }) {
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [subjects, setSubjects] = useState<any[]>([]);
   const [testTypes, setTestTypes] = useState<any[]>([]);
@@ -35,6 +35,8 @@ export function GradeEntry() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSavingStatus] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
 
   // Fetch classes (with semester), subjects, and test types on mount and when semester changes
   useEffect(() => {
@@ -245,6 +247,59 @@ export function GradeEntry() {
     }
   };
 
+  const handleImportGrades = async () => {
+    if (!importFile) {
+      setError('Vui lòng chọn file');
+      return;
+    }
+    if (!selectedClass || !selectedSubject || !selectedSemester) {
+      setError('Vui lòng chọn lớp, môn học và học kỳ');
+      return;
+    }
+
+    setImporting(true);
+    setError(null);
+    try {
+      const result = await api.importGrades(
+        String(selectedClass.MaLop),
+        selectedSubject,
+        selectedSemester,
+        importFile
+      );
+
+      // Parse import result and update grades (auto-calc averages)
+      if (result && result.grades) {
+        const withAverages = (result.grades as GradeEntry[]).map((g) => ({
+          ...g,
+          average: calculateAverage(g),
+        }));
+        setGrades(withAverages);
+        setImportFile(null);
+        setError(null);
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.message || err.message || 'Lỗi khi nhập file');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    const csv = [
+      ['STT', 'Mã HS', 'Họ và tên', 'Điểm Miệng/15\'', 'Điểm 1 Tiết', 'Điểm Giữa kỳ', 'Điểm Cuối kỳ'].join(','),
+      ['1', 'HS0001', 'Hoàng Gia An', '8, 7.5, 9', '8, 7', '7.5', '8'],
+      ['2', 'HS0002', 'Nguyễn Minh Khang', '7, 8', '7.5, 8', '8', '8.5'],
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'grades_template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div>
       <h1 className="text-green-900 mb-6">Nhập bảng điểm môn học</h1>
@@ -308,6 +363,61 @@ export function GradeEntry() {
               <option value="1">Học kỳ I</option>
               <option value="2">Học kỳ II</option>
             </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white p-4 rounded-xl shadow-sm mb-6 border border-gray-200">
+        <h3 className="text-gray-900 font-medium mb-3 flex items-center gap-2">
+          <Upload className="w-5 h-5 text-green-600" />
+          Nhập điểm từ file Excel/CSV
+        </h3>
+        <div className="flex flex-col md:flex-row gap-3 items-start md:items-center">
+          <input
+            type="file"
+            accept=".csv, application/vnd.ms-excel, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+            className="text-sm flex-1"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={handleImportGrades}
+              disabled={importing || !importFile}
+              className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50 whitespace-nowrap"
+            >
+              <Upload className="w-4 h-4" />
+              {importing ? 'Đang nhập...' : 'Nhập file'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadTemplate}
+              className="flex items-center gap-2 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 whitespace-nowrap"
+            >
+              <Download className="w-4 h-4" />
+              Tải mẫu CSV
+            </button>
+            {grades.length > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  setGrades(prev =>
+                    prev.map(g => ({
+                      ...g,
+                      scores: {
+                        mieng15Phut: '',
+                        mot1Tiet: '',
+                        giuaKy: '',
+                        cuoiKy: ''
+                      },
+                      average: null,
+                    }))
+                  )
+                }
+                className="flex items-center gap-2 bg-red-50 border border-red-300 text-red-600 px-4 py-2 rounded-lg hover:bg-red-100 whitespace-nowrap"
+              >
+                Xóa số điểm
+              </button>
+            )}
           </div>
         </div>
       </div>

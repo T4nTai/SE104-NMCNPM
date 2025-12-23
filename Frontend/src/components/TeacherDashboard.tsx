@@ -12,6 +12,8 @@ import { ClassListManagement } from './teacher/ClassListManagement';
 import { GradeEntry } from './teacher/GradeEntry';
 import { GradeSearch } from './shared/GradeSearch';
 import { StudentSearch } from './teacher/StudentSearch';
+import { Assignments } from './teacher/Assignments';
+import { UserProfile } from './shared/UserProfile';
 
 interface TeacherDashboardProps {
   user: User;
@@ -20,21 +22,29 @@ interface TeacherDashboardProps {
 
 type TeacherScreen = 
   | 'home'
+  | 'assignments'
   | 'class-list'
   | 'grade-entry'
   | 'grade-search'
-  | 'student-search';
+  | 'student-search'
+  | 'profile';
 
 export function TeacherDashboard({ user, onLogout }: TeacherDashboardProps) {
   const [currentScreen, setCurrentScreen] = useState<TeacherScreen>('home');
 
   const menuItems = [
     { id: 'home' as TeacherScreen, label: 'Trang chủ', icon: Home },
+    { id: 'profile' as TeacherScreen, label: 'Chỉnh sửa tài khoản', icon: Users },
+    { id: 'assignments' as TeacherScreen, label: 'Phân công của tôi', icon: ClipboardList },
     { id: 'class-list' as TeacherScreen, label: 'Danh sách lớp', icon: Users },
     { id: 'grade-entry' as TeacherScreen, label: 'Nhập bảng điểm', icon: ClipboardList },
     { id: 'grade-search' as TeacherScreen, label: 'Tra cứu điểm', icon: Search },
     { id: 'student-search' as TeacherScreen, label: 'Tra cứu học sinh', icon: Search },
   ];
+
+  // Extract MaGV from user context; user.id should contain the teacher's id
+  // If user.id is not numeric, try to get it from API after login
+  const teacherId = Number(user.id) || null;
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -102,10 +112,12 @@ export function TeacherDashboard({ user, onLogout }: TeacherDashboardProps) {
               </div>
             </div>
           )}
-          {currentScreen === 'class-list' && <ClassListManagement />}
-          {currentScreen === 'grade-entry' && <GradeEntry />}
-          {currentScreen === 'grade-search' && <GradeSearch userRole="teacher" />}
+          {currentScreen === 'class-list' && <ClassListManagement teacherId={teacherId} />}
+          {currentScreen === 'assignments' && <Assignments user={user} />}
+          {currentScreen === 'grade-entry' && <GradeEntry teacherId={teacherId} />}
+          {currentScreen === 'grade-search' && <GradeSearch userRole="teacher" teacherId={teacherId} />}
           {currentScreen === 'student-search' && <StudentSearch />}
+          {currentScreen === 'profile' && <UserProfile user={user} />}
         </div>
       </div>
     </div>

@@ -127,7 +127,7 @@ export const api = {
   },
 
   // ========== Teacher Endpoints ==========
-  async getTeacherClasses(params?: { MaNamHoc?: string; MaKhoiLop?: string; MaHocKy?: string }): Promise<ClassInfo[]> {
+  async getTeacherClasses(params?: { MaGV?: string | number; MaNamHoc?: string; MaKhoiLop?: string; MaHocKy?: string }): Promise<ClassInfo[]> {
     const { data } = await apiClient.get('/teacher/classes', { params });
     return (data.data || data) as ClassInfo[];
   },
@@ -135,6 +135,20 @@ export const api = {
   async getStudentsByClass(MaLop: string, MaHocKy: string): Promise<any[]> {
     const { data } = await apiClient.get(`/teacher/classes/${MaLop}/semesters/${MaHocKy}/students`);
     return (data.data || data) as any[];
+  },
+
+  async getMyClassDetails(MaLop: string | number, MaHocKy: string | number): Promise<{ classInfo: any; classmates: any[] }>{
+    const { data } = await apiClient.get(`/students/classes/${MaLop}/semesters/${MaHocKy}/details`);
+    return (data.data || data) as { classInfo: any; classmates: any[] };
+  },
+
+  async importStudents(MaLop: string, MaHocKy: string, file: File): Promise<any> {
+    const form = new FormData();
+    form.append('file', file);
+    const { data } = await apiClient.post(`/teacher/classes/${MaLop}/semesters/${MaHocKy}/students/import`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return data.data || data;
   },
 
   async addStudentToClass(
@@ -203,6 +217,21 @@ export const api = {
     }>;
   }): Promise<void> {
     await apiClient.post('/teacher/gradebooks/enter', payload);
+  },
+
+  async importGrades(MaLop: string, MaMon: string, MaHocKy: string, file: File): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await apiClient.post(`/teacher/classes/${MaLop}/subjects/${MaMon}/semesters/${MaHocKy}/import-grades`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return data.data || data;
+  },
+
+  async getTeacherAssignments(MaGV?: string | number): Promise<{ homeroom: any[]; subject: any[] }> {
+    // MaGV is optional now - backend will extract from JWT token
+    const { data } = await apiClient.get('/teacher/assignments', MaGV ? { params: { MaGV } } : undefined);
+    return data.data || data;
   },
 
   // ========== Admin - Khoi Lop (Grade Levels) ==========
@@ -346,6 +375,32 @@ export const api = {
     await apiClient.delete(`/admin/lop/${MaLop}`);
   },
 
+  async assignHomeroom(MaLop: number | string, MaGVCN: number | string): Promise<any> {
+    const { data } = await apiClient.put(`/admin/lop/${MaLop}/assign-homeroom`, { MaGVCN });
+    return data.data || data;
+  },
+
+  async assignSubjectTeacher(payload: { MaLop: number | string; MaMon: number | string; MaHocKy: number | string; MaGV: number | string }): Promise<any> {
+    const { data } = await apiClient.put('/admin/gradebooks/assign-teacher', payload);
+    return data.data || data;
+  },
+
+  // ========== Admin - Class Assignments Management ==========
+  async getClassAssignments(params?: { MaNamHoc?: number; MaKhoiLop?: number }): Promise<any[]> {
+    const { data } = await apiClient.get('/admin/class-assignments', { params });
+    return data.data || data;
+  },
+
+  async removeHomeroomTeacher(MaLop: number): Promise<any> {
+    const { data } = await apiClient.delete(`/admin/class-assignments/homeroom/${MaLop}`);
+    return data.data || data;
+  },
+
+  async removeSubjectTeacher(MaBangDiemMon: number): Promise<any> {
+    const { data } = await apiClient.delete(`/admin/class-assignments/subject/${MaBangDiemMon}`);
+    return data.data || data;
+  },
+
   // ========== Admin - Tham So (Parameters by Academic Year) ==========
   async getParameters(MaNH: string): Promise<any> {
     const { data } = await apiClient.get(`/admin/namhoc/${MaNH}/thamso`);
@@ -366,16 +421,18 @@ export const api = {
 
   // ========== Reports ==========
   async getReportBySemesterAndClass(params: {
-    MaHocKy: string;
-    MaLop: string;
+    MaHocKy: number | string;
+    MaNamHoc: number | string;
+    MaLop: number | string;
   }): Promise<any> {
     const { data } = await apiClient.get('/reports/semester-class', { params });
     return data.data || data;
   },
 
   async getReportBySubject(params: {
-    MaHocKy: string;
-    MaMonHoc: string;
+    MaHocKy: number | string;
+    MaNamHoc: number | string;
+    MaMon: number | string;
   }): Promise<any> {
     const { data } = await apiClient.get('/reports/subject', { params });
     return data.data || data;
@@ -467,6 +524,15 @@ export const api = {
   async resetMatKhau(MaNguoiDung: number, MatKhauMoi: string): Promise<{ success: boolean; message: string }> {
     const { data } = await apiClient.post(`/admin/nguoidung/${MaNguoiDung}/reset-password`, {
       MatKhauMoi,
+    });
+    return data.data || data;
+  },
+
+  async importNguoiDung(file: File): Promise<any> {
+    const form = new FormData();
+    form.append('file', file);
+    const { data } = await apiClient.post('/admin/nguoidung/import', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
     });
     return data.data || data;
   },

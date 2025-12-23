@@ -1,8 +1,10 @@
 import { Op } from "sequelize";
 import { KhoiLop, MonHoc, HocKy, NamHoc, LoaiHinhKiemTra } from "../models/academic.model.js";
-import { Lop, HocSinh } from "../models/student.model.js";
+import { Lop, HocSinh, HocSinhLop } from "../models/student.model.js";
+import { BangDiemMon } from "../models/gradebook.model.js";
 import { ThamSo } from "../models/config.model.js";
 import { NguoiDung, NhomNguoiDung, Quyen } from "../models/auth.model.js";
+import { CTBangDiemMonHocSinh } from "../models/gradebook.model.js";
 import sequelize from "../configs/sequelize.js";
 import bcrypt from "bcryptjs";
 import { sendAccountCreationEmail } from "../ultis/email.js";
@@ -89,6 +91,22 @@ function validateThamSo(data) {
   //   if (!in0to10(data[k])) throw { status: 400, message: `${k} phải trong [0..10]` };
   // }
 }
+
+const pickField = (row, names = []) => {
+  for (const name of names) {
+    const val = row[name];
+    if (val != null && String(val).trim() !== "") return typeof val === "string" ? val.trim() : val;
+  }
+  return null;
+};
+
+const normalizeBoolean = (val, fallback = false) => {
+  if (val == null || val === "") return fallback;
+  const s = String(val).trim().toLowerCase();
+  if (["true", "1", "yes", "y", "ok", "send", "x"].includes(s)) return true;
+  if (["false", "0", "no", "n"].includes(s)) return false;
+  return fallback;
+};
 
 export class AdminService {
   // ===== NAM HOC =====
@@ -411,6 +429,32 @@ export class AdminService {
     return { deleted: true };
   }
 
+  // ===== PHÂN CÔNG GIÁO VIÊN CHỦ NHIỆM =====
+  static async assignHomeroomTeacher(MaLop, { MaGVCN }) {
+    if (!Number.isInteger(Number(MaLop))) throw { status: 400, message: "MaLop không hợp lệ" };
+    if (MaGVCN == null) throw { status: 400, message: "MaGVCN là bắt buộc" };
+
+    const lop = await Lop.findByPk(Number(MaLop));
+    if (!lop) throw { status: 404, message: "Lop not found" };
+
+    const gv = await NguoiDung.findByPk(Number(MaGVCN), {
+      include: [{ model: NhomNguoiDung, as: "nhom", required: false }],
+      attributes: { exclude: ["MatKhau"] },
+    });
+    if (!gv) throw { status: 404, message: "NguoiDung (Giáo viên) không tồn tại" };
+
+    // Không cho phân công tài khoản học sinh làm GVCN
+    const tenNhom = String(gv?.nhom?.TenNhomNguoiDung || "").toLowerCase();
+    if (tenNhom.includes("hoc sinh") || tenNhom.includes("student")) {
+      throw { status: 400, message: "Không thể gán học sinh làm giáo viên chủ nhiệm" };
+    }
+
+    await lop.update({ MaGVCN: Number(MaGVCN) });
+    return await Lop.findByPk(Number(MaLop), {
+      include: [{ model: NguoiDung, as: "GVCN", required: false, attributes: ["MaNguoiDung", "HoVaTen", "Email"] }],
+    });
+  }
+
   // ===== QUYEN (PERMISSIONS) =====
   static async createQuyen(payload) {
     const data = {
@@ -467,6 +511,39 @@ export class AdminService {
     if (!quyen) throw { status: 404, message: "Quyen not found" };
     
     return await NhomNguoiDung.create({ TenNhomNguoiDung, MaQuyen });
+  }
+
+  // ===== PHÂN CÔNG GIÁO VIÊN BỘ MÔN CHO BẢNG ĐIỂM MÔN =====
+  static async assignSubjectTeacher({ MaLop, MaMon, MaHocKy, MaGV }) {
+    if (MaLop == null || MaMon == null || MaHocKy == null || MaGV == null) {
+      throw { status: 400, message: "MaLop, MaMon, MaHocKy, MaGV đều bắt buộc" };
+    }
+
+    const gv = await NguoiDung.findByPk(Number(MaGV), {
+      include: [{ model: NhomNguoiDung, as: "nhom", required: false }],
+      attributes: { exclude: ["MatKhau"] },
+    });
+    if (!gv) throw { status: 404, message: "NguoiDung (Giáo viên) không tồn tại" };
+    const tenNhom = String(gv?.nhom?.TenNhomNguoiDung || "").toLowerCase();
+    if (tenNhom.includes("hoc sinh") || tenNhom.includes("student")) {
+      throw { status: 400, message: "Không thể gán học sinh làm giáo viên bộ môn" };
+    }
+
+    // Tìm hoặc tạo bảng điểm môn theo lớp-môn-học kỳ
+    const [bdm] = await BangDiemMon.findOrCreate({
+      where: { MaLop: Number(MaLop), MaHocKy: Number(MaHocKy), MaMon: Number(MaMon) },
+      defaults: { MaLop: Number(MaLop), MaHocKy: Number(MaHocKy), MaMon: Number(MaMon) },
+    });
+
+    await bdm.update({ MaGV: Number(MaGV) });
+    return await BangDiemMon.findByPk(bdm.MaBangDiemMon, {
+      include: [
+        { model: Lop, attributes: ["MaLop", "TenLop"], required: false },
+        { model: HocKy, attributes: ["MaHK", "TenHK"], required: false },
+        { model: MonHoc, attributes: ["MaMonHoc", "TenMonHoc"], required: false },
+        { model: NguoiDung, as: "GVMon", attributes: ["MaNguoiDung", "HoVaTen", "Email"], required: false },
+      ],
+    });
   }
 
   static async listNhomNguoiDung() {
@@ -678,10 +755,33 @@ export class AdminService {
   }
 
   static async deleteNguoiDung(MaNguoiDung) {
-    const row = await NguoiDung.findByPk(MaNguoiDung);
-    if (!row) throw { status: 404, message: "NguoiDung not found" };
-    await row.destroy();
-    return { deleted: true };
+    return await sequelize.transaction(async (t) => {
+      const user = await NguoiDung.findByPk(MaNguoiDung, { transaction: t });
+      if (!user) throw { status: 404, message: "NguoiDung not found" };
+
+      // Lưu MaHocSinh trước khi xóa user
+      const MaHocSinh = user.MaHocSinh;
+
+      // Xóa user khỏi bảng NGUOIDUNG trước (vì có FK constraint)
+      await user.destroy({ transaction: t });
+
+      // Nếu user có MaHocSinh (là học sinh), xóa toàn bộ dữ liệu liên quan
+      if (MaHocSinh) {
+        // Xóa điểm thi của học sinh
+        await CTBangDiemMonHocSinh.destroy({ where: { MaHocSinh }, transaction: t });
+        
+        // Xóa học sinh khỏi các lớp
+        await HocSinhLop.destroy({ where: { MaHocSinh }, transaction: t });
+        
+        // Xóa học sinh khỏi bảng HOCSINH
+        const student = await HocSinh.findByPk(MaHocSinh, { transaction: t });
+        if (student) {
+          await student.destroy({ transaction: t });
+        }
+      }
+      
+      return { deleted: true };
+    });
   }
 
   static async resetMatKhau(MaNguoiDung, { MatKhauMoi }) {
@@ -694,5 +794,168 @@ export class AdminService {
     await row.update({ MatKhau: hashedPassword });
     
     return { success: true, message: "Mật khẩu đã được đặt lại" };
+  }
+
+  static async importNguoiDungFromRows(rows = []) {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      throw { status: 400, message: "File không có dữ liệu" };
+    }
+
+    const groups = await NhomNguoiDung.findAll();
+    const groupById = new Map(groups.map((g) => [Number(g.MaNhomNguoiDung), g]));
+    const groupByName = new Map(groups.map((g) => [String(g.TenNhomNguoiDung || "").trim().toLowerCase(), g]));
+    const defaultTeacherGroup = groups.find((g) => {
+      const name = String(g.TenNhomNguoiDung || "").toLowerCase();
+      return !name.includes("hoc sinh") && !name.includes("student");
+    });
+
+    const errors = [];
+    let imported = 0;
+
+    for (let idx = 0; idx < rows.length; idx += 1) {
+      const row = rows[idx] || {};
+
+      const TenDangNhap = pickField(row, ["Tên đăng nhập", "TenDangNhap", "Username", "user", "TaiKhoan", "Account", "username"]);
+      const MatKhau = pickField(row, ["Mật khẩu", "MatKhau", "Password", "Mat khau", "Pass"]);
+      const HoVaTen = pickField(row, ["Họ và tên", "HoVaTen", "HoTen", "FullName", "Ho va ten"]);
+      const Email = pickField(row, ["Email", "Mail", "DiaChiEmail"]);
+      const MaNhomNguoiDungRaw = pickField(row, ["MaNhomNguoiDung", "MaNhom", "GroupId"]);
+      const TenNhomNguoiDungField = pickField(row, ["Nhóm người dùng", "TenNhomNguoiDung", "Nhom", "Role", "GroupName"]);
+      const sendEmail = normalizeBoolean(pickField(row, ["Gửi thông tin đăng nhập qua email", "GuiEmail", "SendEmail", "Email?", "send_email"]), true);
+
+      let MaNhomNguoiDung = null;
+      if (MaNhomNguoiDungRaw != null && !Number.isNaN(Number(MaNhomNguoiDungRaw))) {
+        MaNhomNguoiDung = Number(MaNhomNguoiDungRaw);
+      } else if (TenNhomNguoiDungField) {
+        const g = groupByName.get(String(TenNhomNguoiDungField).trim().toLowerCase());
+        MaNhomNguoiDung = g?.MaNhomNguoiDung ?? null;
+      } else if (defaultTeacherGroup) {
+        MaNhomNguoiDung = defaultTeacherGroup.MaNhomNguoiDung;
+      }
+
+      const rowNumber = idx + 2; // assuming row 1 is header
+
+      if (!TenDangNhap || !MatKhau || !HoVaTen || !Email) {
+        errors.push({ row: rowNumber, message: "Thiếu Tên đăng nhập/Mật khẩu/Họ và tên/Email" });
+        continue;
+      }
+      if (!MaNhomNguoiDung || !groupById.has(MaNhomNguoiDung)) {
+        errors.push({ row: rowNumber, message: "Không tìm thấy nhóm người dùng hợp lệ" });
+        continue;
+      }
+
+      try {
+        await this.createNguoiDung({
+          TenDangNhap,
+          MatKhau,
+          HoVaTen,
+          Email,
+          MaNhomNguoiDung,
+          sendEmail,
+        });
+        imported += 1;
+      } catch (err) {
+        const message = err?.message || err?.msg || "Lỗi không xác định";
+        errors.push({ row: rowNumber, message });
+      }
+    }
+
+    return {
+      total: rows.length,
+      imported,
+      failed: errors.length,
+      errors,
+    };
+  }
+
+  // ===== QUẢN LÝ PHÂN CÔNG GIÁO VIÊN =====
+  static async listClassAssignments({ MaNamHoc = null, MaKhoiLop = null } = {}) {
+    const where = {};
+    if (MaNamHoc != null) where.MaNamHoc = MaNamHoc;
+    if (MaKhoiLop != null) where.MaKhoiLop = MaKhoiLop;
+
+    const classes = await Lop.findAll({
+      where,
+      include: [
+        { model: KhoiLop, as: "KhoiLop", attributes: ["MaKL", "TenKL"], required: false },
+        { model: NamHoc, as: "NamHoc", attributes: ["MaNH", "Nam1", "Nam2"], required: false },
+        { 
+          model: NguoiDung, 
+          as: "GVCN", 
+          required: false, 
+          attributes: ["MaNguoiDung", "HoVaTen", "Email"] 
+        },
+      ],
+      order: [["MaLop", "ASC"]],
+    });
+
+    // Get subject teachers for all classes
+    const classIds = classes.map(c => c.MaLop);
+    const subjectTeachers = await BangDiemMon.findAll({
+      where: { MaLop: { [Op.in]: classIds } },
+      include: [
+        { model: MonHoc, attributes: ["MaMonHoc", "TenMonHoc", "MaMon"], required: false },
+        { model: HocKy, attributes: ["MaHK", "TenHK"], required: false },
+        { 
+          model: NguoiDung, 
+          as: "GVMon", 
+          required: false, 
+          attributes: ["MaNguoiDung", "HoVaTen", "Email"] 
+        },
+      ],
+    });
+
+    // Map subject teachers by class
+    const subjectMap = {};
+    for (const st of subjectTeachers) {
+      if (!subjectMap[st.MaLop]) subjectMap[st.MaLop] = [];
+      subjectMap[st.MaLop].push({
+        MaBangDiemMon: st.MaBangDiemMon,
+        MaMon: st.MaMon,
+        TenMonHoc: st.MonHoc?.TenMonHoc || st.MONHOC?.TenMonHoc || null,
+        MaHocKy: st.MaHocKy,
+        TenHocKy: st.HocKy?.TenHK || st.HOCKY?.TenHK || null,
+        MaGV: st.MaGV,
+        HoVaTenGV: st.GVMon?.HoVaTen || null,
+        EmailGV: st.GVMon?.Email || null,
+      });
+    }
+
+    return classes.map(c => ({
+      MaLop: c.MaLop,
+      TenLop: c.TenLop,
+      MaKhoiLop: c.MaKhoiLop,
+      TenKhoiLop: c.KhoiLop?.TenKL || null,
+      MaNamHoc: c.MaNamHoc,
+      NamHoc: c.NamHoc ? `${c.NamHoc.Nam1}-${c.NamHoc.Nam2}` : null,
+      MaGVCN: c.MaGVCN,
+      HoVaTenGVCN: c.GVCN?.HoVaTen || null,
+      EmailGVCN: c.GVCN?.Email || null,
+      subjectTeachers: subjectMap[c.MaLop] || [],
+    }));
+  }
+
+  static async removeHomeroomTeacher(MaLop) {
+    const lop = await Lop.findByPk(Number(MaLop));
+    if (!lop) throw { status: 404, message: "Lớp không tồn tại" };
+    await lop.update({ MaGVCN: null });
+    return { success: true };
+  }
+
+  static async removeSubjectTeacher(MaBangDiemMon) {
+    const bangDiem = await BangDiemMon.findByPk(Number(MaBangDiemMon));
+    if (!bangDiem) throw { status: 404, message: "Phân công không tồn tại" };
+    
+    // Check if there are any grades entered
+    const hasGrades = await CTBangDiemMonHocSinh.count({
+      where: { MaBangDiemMon: Number(MaBangDiemMon) }
+    });
+    
+    if (hasGrades > 0) {
+      throw { status: 400, message: "Không thể xóa phân công đã có điểm" };
+    }
+    
+    await bangDiem.destroy();
+    return { success: true };
   }
 }

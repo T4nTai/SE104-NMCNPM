@@ -8,6 +8,7 @@ export const BangDiemMon = sequelize.define(
     MaLop: { type: DataTypes.INTEGER, allowNull: false },
     MaHocKy: { type: DataTypes.INTEGER, allowNull: false },
     MaMon: { type: DataTypes.INTEGER, allowNull: false },
+    MaGV: { type: DataTypes.INTEGER, allowNull: true },
   },
   { tableName: "BANGDIEMMON", timestamps: false }
 );

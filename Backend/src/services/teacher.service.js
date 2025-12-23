@@ -3,49 +3,236 @@ import bcrypt from "bcryptjs";
 import { Op } from "sequelize";
 
 import { Lop, HocSinh, HocSinhLop } from "../models/student.model.js";
-import { MonHoc, LoaiHinhKiemTra, KhoiLop } from "../models/academic.model.js";
+import { MonHoc, LoaiHinhKiemTra, KhoiLop, HocKy, NamHoc } from "../models/academic.model.js";
 import { ThamSo } from "../models/config.model.js";
 import { NguoiDung, NhomNguoiDung } from "../models/auth.model.js";
 import { BangDiemMon, CTBangDiemMonHocSinh, CTBangDiemMonLHKT } from "../models/gradebook.model.js";
+import { parseSpreadsheet } from "../ultis/spreadsheet.js";
+
+const pickField = (row, names = []) => {
+  for (const name of names) {
+    const val = row[name];
+    if (val != null && String(val).trim() !== "") return typeof val === "string" ? val.trim() : val;
+  }
+  return null;
+};
+
+const normalizeGender = (value) => {
+  const s = String(value || "").trim().toLowerCase();
+  if (s === "nam" || s === "male" || s === "m") return "Nam";
+  if (s === "nu" || s === "nữ" || s === "female" || s === "f") return "Nu";
+  return value || "Nam";
+};
+
+const normalizeDateOnly = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  
+  // If already YYYY-MM-DD string, return as-is
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  
+  // Handle Excel date serial
+  if (typeof value === "number") {
+    const date = new Date(Math.round((value - 25569) * 86400 * 1000));
+    return !Number.isNaN(date.getTime()) ? date.toISOString().slice(0, 10) : null;
+  }
+  
+  // Try parsing as string date (spreadsheet.js already normalized)
+  const s = String(value || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  
+  const parsed = new Date(s);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+};
 
 export class TeacherService {
-  // ===== XEM DS LOP =====
-  static async listClasses({ MaNamHoc = null, MaKhoiLop = null, MaHocKy = null } = {}) {
-    const where = {};
-    if (MaNamHoc != null) where.MaNamHoc = MaNamHoc;
-    if (MaKhoiLop != null) where.MaKhoiLop = MaKhoiLop;
-    
-    const classes = await Lop.findAll({
-      where,
-      include: [{
-        model: KhoiLop,
-        as: "KhoiLop",
-        attributes: ["TenKL"],
-      }],
+  // ===== PHÂN CÔNG GIÁO VIÊN (XEM) =====
+  static async listAssignmentsForTeacher({ MaGV }) {
+    if (MaGV == null) throw { status: 400, message: "MaGV là bắt buộc" };
+
+    console.log('[listAssignmentsForTeacher] Querying for MaGV:', MaGV);
+
+    const homeroom = await Lop.findAll({
+      where: { MaGVCN: Number(MaGV) },
+      include: [
+        { model: KhoiLop, as: "KhoiLop", attributes: ["MaKL", "TenKL"], required: false },
+        { model: NamHoc, as: "NamHoc", attributes: ["MaNH", "Nam1", "Nam2"], required: false },
+      ],
       order: [["MaLop", "ASC"]],
     });
 
-    // Count students for each class if MaHocKy is provided
-    if (MaHocKy) {
-      const classesWithCount = await Promise.all(
-        classes.map(async (cls) => {
-          const count = await HocSinhLop.count({
-            where: { MaLop: cls.MaLop, MaHocKy },
-          });
-          return {
-            ...cls.toJSON(),
-            SoLuongHocSinh: count,
-            TenKhoiLop: cls.KhoiLop?.TenKL || null,
-          };
-        })
-      );
-      return classesWithCount;
+    const subject = await BangDiemMon.findAll({
+      where: { MaGV: Number(MaGV) },
+      include: [
+        {
+          model: Lop,
+          attributes: ["MaLop", "TenLop", "MaKhoiLop", "MaNamHoc"],
+          required: false,
+          include: [
+            { model: KhoiLop, as: "KhoiLop", attributes: ["MaKL", "TenKL"], required: false },
+            { model: NamHoc, as: "NamHoc", attributes: ["MaNH", "Nam1", "Nam2"], required: false },
+          ],
+        },
+        { model: HocKy, attributes: ["MaHK", "TenHK"], required: false },
+        { model: MonHoc, attributes: ["MaMonHoc", "TenMonHoc", "MaMon"], required: false },
+      ],
+      order: [["MaLop", "ASC"], ["MaHocKy", "ASC"], ["MaMon", "ASC"]],
+    });
+
+    console.log('[listAssignmentsForTeacher] Found:', {
+      homeroomCount: homeroom.length,
+      subjectCount: subject.length,
+      sampleSubject: subject[0] ? {
+        MaBangDiemMon: subject[0].MaBangDiemMon,
+        MaLop: subject[0].MaLop,
+        MaHocKy: subject[0].MaHocKy,
+        MaMon: subject[0].MaMon,
+        keys: Object.keys(subject[0].dataValues || subject[0]),
+        rawLOP: subject[0].LOP ? 'exists' : 'null',
+        rawLop: subject[0].Lop ? 'exists' : 'null',
+        rawHOCKY: subject[0].HOCKY ? 'exists' : 'null',
+        rawHocKy: subject[0].HocKy ? 'exists' : 'null',
+        rawMONHOC: subject[0].MONHOC ? 'exists' : 'null',
+        rawMonHoc: subject[0].MonHoc ? 'exists' : 'null'
+      } : null
+    });
+
+    const mappedSubject = subject.map((r) => {
+      // Try both uppercase and normal case for associations
+      const lop = r.LOP || r.Lop;
+      const hocKy = r.HOCKY || r.HocKy;
+      const monHoc = r.MONHOC || r.MonHoc;
+      
+      const mapped = {
+        MaBangDiemMon: r.MaBangDiemMon,
+        MaLop: r.MaLop,
+        TenLop: lop?.TenLop || null,
+        Khoi: lop?.KhoiLop?.TenKL || null,
+        NamHoc: lop?.NamHoc ? `${lop.NamHoc.Nam1}-${lop.NamHoc.Nam2}` : null,
+        MaHocKy: r.MaHocKy,
+        TenHocKy: hocKy?.TenHK || null,
+        MaMon: r.MaMon,
+        TenMonHoc: monHoc?.TenMonHoc || null,
+      };
+      console.log('[listAssignmentsForTeacher] Mapped subject item:', mapped);
+      return mapped;
+    });
+
+    return {
+      homeroom: homeroom.map((r) => ({
+        MaLop: r.MaLop,
+        TenLop: r.TenLop,
+        Khoi: r.KhoiLop?.TenKL || null,
+        NamHoc: r.NamHoc ? `${r.NamHoc.Nam1}-${r.NamHoc.Nam2}` : null,
+      })),
+      subject: mappedSubject,
+    };
+  }
+
+  // ===== XEM DS LOP (theo giáo viên) =====
+  static async listClasses({ MaGV = null, MaNamHoc = null, MaKhoiLop = null, MaHocKy = null } = {}) {
+    const teacherId = Number(MaGV);
+    if (!MaGV || Number.isNaN(teacherId) || teacherId <= 0) {
+      console.warn('[listClasses] Invalid MaGV:', MaGV);
+      return []; // Return empty array instead of throwing error
+    }
+    
+    console.log('[listClasses] Querying for teacher:', teacherId, 'with filters:', { MaNamHoc, MaKhoiLop, MaHocKy });
+
+    // 1) Lớp chủ nhiệm
+    const homeroomWhere = { MaGVCN: teacherId };
+    if (MaNamHoc != null) homeroomWhere.MaNamHoc = MaNamHoc;
+    if (MaKhoiLop != null) homeroomWhere.MaKhoiLop = MaKhoiLop;
+
+    const homeroom = await Lop.findAll({
+      where: homeroomWhere,
+      include: [
+        { model: KhoiLop, as: "KhoiLop", attributes: ["MaKL", "TenKL"] },
+        { model: NamHoc, as: "NamHoc", attributes: ["MaNH", "Nam1", "Nam2"] },
+      ],
+      order: [["MaLop", "ASC"]],
+    });
+
+    // 2) Lớp dạy bộ môn (BangDiemMon)
+    const subjectWhere = { MaGV: teacherId };
+    if (MaHocKy != null) subjectWhere.MaHocKy = MaHocKy;
+
+    const subjectAssignments = await BangDiemMon.findAll({
+      where: subjectWhere,
+      include: [
+        {
+          model: Lop,
+          include: [
+            { model: KhoiLop, as: "KhoiLop", attributes: ["MaKL", "TenKL"] },
+            { model: NamHoc, as: "NamHoc", attributes: ["MaNH", "Nam1", "Nam2"] },
+          ],
+        },
+        { model: MonHoc, attributes: ["MaMonHoc", "TenMonHoc", "MaMon"] },
+        { model: HocKy, attributes: ["MaHK", "TenHK"] },
+      ],
+      order: [["MaLop", "ASC"], ["MaHocKy", "ASC"], ["MaMon", "ASC"]],
+    });
+
+    // 3) Gộp kết quả theo lớp
+    const classMap = new Map();
+
+    const upsert = (cls) => {
+      if (!cls) return null;
+      const current = classMap.get(cls.MaLop) || {
+        MaLop: cls.MaLop,
+        TenLop: cls.TenLop,
+        MaKhoiLop: cls.MaKhoiLop,
+        TenKhoiLop: cls.KhoiLop?.TenKL || null,
+        MaNamHoc: cls.MaNamHoc,
+        NamHoc: cls.NamHoc ? `${cls.NamHoc.Nam1}-${cls.NamHoc.Nam2}` : null,
+        roles: [],
+        subjects: [],
+      };
+      classMap.set(cls.MaLop, current);
+      return current;
+    };
+
+    for (const r of homeroom) {
+      const cur = upsert(r);
+      if (cur && !cur.roles.includes("homeroom")) cur.roles.push("homeroom");
     }
 
-    return classes.map(cls => ({
-      ...cls.toJSON(),
-      TenKhoiLop: cls.KhoiLop?.TenKL || null,
-    }));
+    for (const r of subjectAssignments) {
+      // Handle association alias differences (Sequelize may use uppercase keys)
+      const lop = r.LOP || r.Lop;
+
+      // respect optional filters on Lop
+      if (MaNamHoc != null && (lop?.MaNamHoc ?? null) !== MaNamHoc) continue;
+      if (MaKhoiLop != null && (lop?.MaKhoiLop ?? null) !== MaKhoiLop) continue;
+
+      const cur = upsert(lop || r);
+      if (!cur) continue;
+      if (!cur.roles.includes("subject")) cur.roles.push("subject");
+
+      const MaMon = r.MaMon;
+      const already = cur.subjects.find((s) => s.MaMon === MaMon && s.MaHocKy === r.MaHocKy);
+      if (!already) {
+        cur.subjects.push({
+          MaMon,
+          TenMonHoc: r.MonHoc?.TenMonHoc || null,
+          MaHocKy: r.MaHocKy,
+          TenHK: r.HOCKY?.TenHK || r.HocKy?.TenHK || null,
+        });
+      }
+    }
+
+    // 4) Đếm sĩ số nếu có MaHocKy
+    if (MaHocKy != null) {
+      await Promise.all(
+        Array.from(classMap.values()).map(async (cls) => {
+          const count = await HocSinhLop.count({ where: { MaLop: cls.MaLop, MaHocKy } });
+          cls.SoLuongHocSinh = count;
+        })
+      );
+    }
+
+    // 5) Trả về danh sách theo MaLop ASC
+    return Array.from(classMap.values()).sort((a, b) => Number(a.MaLop) - Number(b.MaLop));
   }
 
   // ===== LAY DS HOC SINH THEO LOP VA HOC KY =====
@@ -151,18 +338,22 @@ export class TeacherService {
   }
 
   static async deleteStudent(MaHocSinh) {
-    // cẩn thận FK: xoá join + điểm trước
+    // Xóa toàn bộ dữ liệu liên quan đến học sinh
     return await sequelize.transaction(async (t) => {
-      await CTBangDiemMonLHKT.destroy({ where: { }, transaction: t, individualHooks: false }); // nếu bạn có FK cascade thì bỏ dòng này
+      // Xóa điểm thi của học sinh
       await CTBangDiemMonHocSinh.destroy({ where: { MaHocSinh }, transaction: t });
+      
+      // Xóa học sinh khỏi các lớp
       await HocSinhLop.destroy({ where: { MaHocSinh }, transaction: t });
 
-      // Xoá tài khoản người dùng gắn với học sinh để tránh lỗi FK
+      // Xóa tài khoản người dùng gắn với học sinh
       await NguoiDung.destroy({ where: { MaHocSinh }, transaction: t });
 
+      // Xóa học sinh khỏi bảng HOCSINH
       const hs = await HocSinh.findByPk(MaHocSinh, { transaction: t });
       if (!hs) throw { status: 404, message: "HocSinh not found" };
       await hs.destroy({ transaction: t });
+      
       return { deleted: true };
     });
   }
@@ -392,4 +583,138 @@ export class TeacherService {
       limit: 50,
     });
   }
+
+  static async importStudentsFromRows({ MaLop, MaHocKy, rows = [] }) {
+    if (!MaLop || !MaHocKy) throw { status: 400, message: "MaLop và MaHocKy là bắt buộc" };
+    if (!Array.isArray(rows) || rows.length === 0) {
+      throw { status: 400, message: "File không có dữ liệu" };
+    }
+
+    const errors = [];
+    let imported = 0;
+
+    for (let idx = 0; idx < rows.length; idx += 1) {
+      const row = rows[idx] || {};
+      const rowNumber = idx + 2; // header row assumed at 1
+
+      // Support multiple column name aliases
+      const MaHocSinh = String(pickField(row, ["Mã học sinh", "MaHocSinh", "MaHS", "StudentId", "StudentCode", "Ma hoc sinh"]) || "").trim();
+      const HoTen = pickField(row, ["Họ và tên", "HoTen", "HoVaTen", "FullName", "Ho va ten"]);
+      const GioiTinh = normalizeGender(pickField(row, ["Giới tính", "GioiTinh", "Gender"]) || "Nam");
+      const NgaySinh = normalizeDateOnly(pickField(row, ["Ngày sinh", "NgaySinh", "BirthDate", "Ngay Sinh", "Ngay sinh"]));
+      const Email = pickField(row, ["Email", "Mail", "DiaChiEmail", "email"]);
+      const SDT = pickField(row, ["Số điện thoại", "SDT", "SoDienThoai", "Phone", "SoDT", "So dien thoai", "so dien thoai"]);
+      const DiaChi = pickField(row, ["Địa chỉ", "DiaChi", "Address", "Dia chi"]);
+      const NgayTiepNhan = normalizeDateOnly(pickField(row, ["Ngày tiếp nhận", "NgayTiepNhan", "Ngay Tiep Nhan", "AdmissionDate", "Ngay tiep nhan"]));
+
+      if (!MaHocSinh || !HoTen || !NgaySinh) {
+        errors.push({ row: rowNumber, message: "Thiếu Mã học sinh/Họ và tên/Ngày sinh" });
+        continue;
+      }
+
+      try {
+        await this.addStudentToClass({
+          MaLop,
+          MaHocKy,
+          student: {
+            MaHocSinh,
+            HoTen,
+            GioiTinh,
+            NgaySinh,
+            Email,
+            SDT,
+            DiaChi,
+            NgayTiepNhan,
+          },
+        });
+        imported += 1;
+      } catch (err) {
+        const message = err?.message || err?.msg || "Lỗi không xác định";
+        errors.push({ row: rowNumber, message });
+      }
+    }
+
+    return {
+      total: rows.length,
+      imported,
+      failed: errors.length,
+      errors,
+    };
+  }
+
+  static async importGrades({ MaLop, MaMon, MaHocKy, file }) {
+    if (!file || !file.buffer) throw { status: 400, message: "File không hợp lệ" };
+
+    try {
+      // Parse spreadsheet
+      // Disable date parsing to avoid converting numeric scores to dates (e.g., 8 -> 1900-01-08)
+      const rows = parseSpreadsheet(file.buffer, { parseDates: false });
+      
+      // Column mapping
+      const pickField = (row, aliases) => {
+        for (const alias of aliases) {
+          const key = Object.keys(row).find(k => k.toLowerCase() === alias.toLowerCase());
+          if (key) return row[key];
+        }
+        return undefined;
+      };
+
+      const normalizeMultiScores = (val) => {
+        if (val == null) return '';
+        const s = String(val).trim();
+        if (!s) return '';
+        const nums = s
+          .split(/[;,]/)
+          .map((p) => p.trim().replace(/\s+/g, ''))
+          .map((p) => Number(p.replace(',', '.')))
+          .filter((n) => Number.isFinite(n));
+        return nums.map((n) => Number(n.toFixed(2))).join(', ');
+      };
+
+      const normalizeSingleScore = (val) => {
+        if (val == null) return '';
+        const s = String(val).trim();
+        if (!s) return '';
+        // take the first numeric token found
+        const match = s.split(/[;,\s]/)
+          .map((p) => p.trim())
+          .map((p) => Number(p.replace(',', '.')))
+          .find((n) => Number.isFinite(n));
+        return match != null ? String(Number(match.toFixed(2))) : '';
+      };
+
+      // Process rows
+      const grades = [];
+      for (const row of rows) {
+        try {
+          const MaHocSinh = pickField(row, ['MaHocSinh', 'Mã HS', 'Mã học sinh', 'MaHS']);
+          const mieng15Phut = pickField(row, ['DiemMieng15', "Điểm Miệng/15'", 'Điểm Miệng/15Phut', 'DiemMieng15Phut']);
+          const mot1Tiet = pickField(row, ['Diem1Tiet', 'Điểm 1 Tiết', 'Diem1Tiet']);
+          const giuaKy = pickField(row, ['DiemGiuaky', 'Điểm Giữa kỳ', 'DiemGiuaKy']);
+          const cuoiKy = pickField(row, ['DiemCuoiky', 'Điểm Cuối kỳ', 'DiemCuoiKy']);
+
+          if (!MaHocSinh) continue;
+
+          grades.push({
+            MaHocSinh,
+            HoTen: pickField(row, ['HoTen', 'Họ và tên', 'HoVaTen']) || '',
+            scores: {
+              mieng15Phut: normalizeMultiScores(mieng15Phut),
+              mot1Tiet: normalizeMultiScores(mot1Tiet),
+              giuaKy: normalizeSingleScore(giuaKy),
+              cuoiKy: normalizeSingleScore(cuoiKy)
+            },
+            average: null
+          });
+        } catch (err) {
+          // Skip invalid rows
+        }
+      }
+
+      return { grades };
+    } catch (err) {
+      throw { status: 400, message: "Lỗi khi đọc file: " + (err.message || "Unknown error") };
+    }
+  }
 }
+

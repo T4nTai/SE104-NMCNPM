@@ -11,13 +11,65 @@ export function ClassSearch({ userRole }: ClassSearchProps) {
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [selectedClass, setSelectedClass] = useState<ClassInfo | null>(null);
   const [students, setStudents] = useState<StudentInClass[]>([]);
+  const [homeroom, setHomeroom] = useState<{ HoVaTen?: string; Email?: string } | null>(null);
   const [loadingClasses, setLoadingClasses] = useState(false);
   const [loadingStudents, setLoadingStudents] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGrade, setSelectedGrade] = useState<string>('all');
-  const [selectedYear, setSelectedYear] = useState('2024-2025');
-  const [selectedSemester, setSelectedSemester] = useState('HK1');
+  const [academicYears, setAcademicYears] = useState<Array<{ MaNH: number; name: string }>>([]);
+  const [selectedYearId, setSelectedYearId] = useState<number | null>(null);
+  const [semesters, setSemesters] = useState<Array<{ MaHK: number; TenHK: string }>>([]);
+  const [selectedSemester, setSelectedSemester] = useState<string>('');
+
+  // Load academic years on mount and set default selected year
+  useEffect(() => {
+    let mounted = true;
+    const loadYears = async () => {
+      try {
+        const years = await api.listAcademicYears();
+        const mapped = (years || []).map((y: any) => ({
+          MaNH: Number(y.MaNH || y.MaNamHoc || y.id || y.MaNH),
+          name: y.NamHoc || y.name || `${y.Nam1 ?? ''}-${y.Nam2 ?? ''}`,
+        }));
+        if (!mounted) return;
+        setAcademicYears(mapped);
+        if (mapped.length > 0) {
+          setSelectedYearId(mapped[0].MaNH);
+        }
+      } catch {
+        // ignore silently; UI can still work without years
+      }
+    };
+    loadYears();
+    return () => { mounted = false; };
+  }, []);
+
+  // Load semesters when year changes; set default semester
+  useEffect(() => {
+    let mounted = true;
+    const loadSems = async () => {
+      try {
+        const sems = await api.listSemesters(
+          selectedYearId ? { MaNamHoc: selectedYearId } : undefined
+        );
+        const mapped = (sems || []).map((s: any) => ({
+          MaHK: Number(s.MaHK || s.id || s.MaHK),
+          TenHK: s.TenHK || s.name || `HK ${s.MaHK}`,
+        }));
+        if (!mounted) return;
+        setSemesters(mapped);
+        if (mapped.length > 0) {
+          // Only set default if not already chosen
+          setSelectedSemester((prev) => prev ? prev : String(mapped[0].MaHK));
+        }
+      } catch {
+        // ignore silently
+      }
+    };
+    loadSems();
+    return () => { mounted = false; };
+  }, [selectedYearId]);
 
   const filteredClasses = classes
     .map((c) => ({
@@ -33,22 +85,32 @@ export function ClassSearch({ userRole }: ClassSearchProps) {
 
   const loadStudents = useCallback(async (MaLop?: string) => {
     if (!MaLop) return setStudents([]);
+    if (!selectedSemester) return; // wait until semester is selected
     setLoadingStudents(true);
     try {
-      const list = await api.getStudentsByClass(MaLop, selectedSemester);
-      setStudents(list as StudentInClass[]);
+      if (userRole === 'student') {
+        const details = await api.getMyClassDetails(MaLop, selectedSemester);
+        setStudents((details?.classmates || []) as StudentInClass[]);
+        setHomeroom(details?.classInfo?.GVCN || null);
+      } else {
+        const list = await api.getStudentsByClass(MaLop, selectedSemester);
+        setStudents(list as StudentInClass[]);
+        setHomeroom(null);
+      }
     } catch (err: any) {
       setError(err.message || 'Không thể tải danh sách học sinh');
-      setStudents([]);
+      // Load initial academic years and semesters
+      setHomeroom(null);
     } finally {
       setLoadingStudents(false);
     }
-  }, [selectedSemester]);
+  }, [selectedSemester, userRole]);
 
   // Load classes for teacher or student's own classes
   useEffect(() => {
     let mounted = true;
     const load = async () => {
+      if (!selectedSemester) return; // require semester to be chosen
       setLoadingClasses(true);
       clearError();
       try {
@@ -98,13 +160,14 @@ export function ClassSearch({ userRole }: ClassSearchProps) {
             <div>
               <label className="block text-gray-700 mb-2">Năm học</label>
               <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(e.target.value)}
+                value={selectedYearId ?? ''}
+                onChange={(e) => setSelectedYearId(Number(e.target.value) || null)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
               >
-                <option value="2024-2025">2024-2025</option>
-                <option value="2023-2024">2023-2024</option>
-                <option value="2022-2023">2022-2023</option>
+                <option value="">-- Chọn năm học --</option>
+                {academicYears.map((y) => (
+                  <option key={y.MaNH} value={y.MaNH}>{y.name}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -114,8 +177,9 @@ export function ClassSearch({ userRole }: ClassSearchProps) {
                 onChange={(e) => setSelectedSemester(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
               >
-                <option value="HK1">Học kỳ I</option>
-                <option value="HK2">Học kỳ II</option>
+                {semesters.map((s) => (
+                  <option key={s.MaHK} value={String(s.MaHK)}>{s.TenHK}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -126,7 +190,6 @@ export function ClassSearch({ userRole }: ClassSearchProps) {
         {userRole === 'teacher' && (
           <div className="bg-white p-4 rounded-xl shadow-sm">
             <h2 className="text-gray-900 mb-4">Danh sách lớp</h2>
-            
             {/* Tìm kiếm và lọc */}
             <div className="space-y-3 mb-4">
               <div className="relative">
@@ -153,7 +216,6 @@ export function ClassSearch({ userRole }: ClassSearchProps) {
                 </select>
               </div>
             </div>
-
             <div className="space-y-2 max-h-[500px] overflow-y-auto">
               {loadingClasses ? (
                 <div className="text-center py-8 text-gray-500">Đang tải danh sách lớp...</div>
@@ -163,7 +225,6 @@ export function ClassSearch({ userRole }: ClassSearchProps) {
                     key={classItem.id}
                     onClick={() => {
                       setSelectedClass(classItem.raw || (classItem as any));
-                      // load students
                       const MaLop = (classItem.raw || classItem).MaLop || (classItem.raw || classItem).MaLop;
                       loadStudents(MaLop);
                     }}
@@ -192,6 +253,7 @@ export function ClassSearch({ userRole }: ClassSearchProps) {
           </div>
         )}
 
+
         <div className={userRole === 'student' ? 'md:col-span-3' : 'md:col-span-2'}>
           {selectedClass ? (
             <div className="bg-white p-6 rounded-xl shadow-sm">
@@ -202,6 +264,9 @@ export function ClassSearch({ userRole }: ClassSearchProps) {
                 <div>
                   <h2 className="text-gray-900">Lớp {(selectedClass as any).TenLop || (selectedClass as any).name}</h2>
                   <p className="text-gray-600">{(selectedClass as any).TenKhoiLop || (selectedClass as any).MaKhoiLop || ''} - Sĩ số: {(selectedClass as any).SiSo || students.length} học sinh</p>
+                  {userRole === 'student' && homeroom && (
+                    <p className="text-sm text-gray-700 mt-1">GVCN: <span className="font-medium">{homeroom.HoVaTen}</span>{homeroom.Email ? ` • ${homeroom.Email}` : ''}</p>
+                  )}
                 </div>
               </div>
               <div className="overflow-x-auto">

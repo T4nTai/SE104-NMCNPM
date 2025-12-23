@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { LoginScreen } from './components/LoginScreen';
-import { RegisterScreen } from './components/RegisterScreen';
 import { AdminDashboard } from './components/AdminDashboard';
 import { StudentDashboard } from './components/StudentDashboard';
 import { TeacherDashboard } from './components/TeacherDashboard';
@@ -15,7 +14,7 @@ export interface User {
 }
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<'login' | 'register' | 'dashboard'>('login');
+  const [currentScreen, setCurrentScreen] = useState<'login' | 'dashboard'>('login');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   const handleLogin = (user: User) => {
@@ -28,24 +27,10 @@ export default function App() {
     setCurrentScreen('login');
   };
 
-  const handleRegister = () => {
-    setCurrentScreen('login');
-  };
-
   if (currentScreen === 'login') {
     return (
       <LoginScreen 
         onLogin={handleLogin}
-        onNavigateToRegister={() => setCurrentScreen('register')}
-      />
-    );
-  }
-
-  if (currentScreen === 'register') {
-    return (
-      <RegisterScreen 
-        onRegister={handleRegister}
-        onNavigateToLogin={() => setCurrentScreen('login')}
       />
     );
   }
